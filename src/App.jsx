@@ -275,14 +275,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const config = {
             type: Phaser.AUTO, width: TOTAL_WIDTH, height: TOTAL_HEIGHT,
             backgroundColor: '#000000', parent: 'phaser-container',
-            // 🔥 AQUI ESTÁ O SEGREDO DA JUSTIÇA: fps: 60 e fixedStep: true
+            // 🔥 CONFIGURAÇÃO ANTI-CONGELAMENTO E FÍSICA JUSTA
+            disableVisibilityChange: true, // O JOGO NÃO PARA AO SAIR DA ABA
             physics: { 
                 default: 'arcade', 
                 arcade: { 
                     debug: false, 
                     gravity: { y: 0 },
-                    fps: 60, // Força a física a calcular em 60hz
-                    fixedStep: true // Garante consistência independente da tela
+                    fps: 60, 
+                    fixedStep: true 
                 } 
             },
             scale: { mode: Phaser.Scale.NONE },
@@ -504,7 +505,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         async function runTurnResolution(scene, turnData) {
             isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
             
-            // --- GUEST LÊ A VERDADE DO HOST (Anti-Desync) ---
+            // 🔥 SYNC HP LOGIC (HOST WRITES, GUEST READS)
             if (!isTraining) {
                 const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
                 if (!isHost) {
@@ -535,7 +536,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
             await new Promise(r => setTimeout(r, 2500));
 
-            // --- HOST ESCREVE A VERDADE (Anti-Desync) ---
+            // 🔥 HOST SALVA O ESTADO PÓS-TURNO
             if (isHost && !isTraining) {
                 const hpState = {};
                 [...playerSquad, ...enemySquad].forEach(ship => { hpState[`${ship.faction}_${ship.squadIndex}`] = ship.hp; });
