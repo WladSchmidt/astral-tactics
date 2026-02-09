@@ -1,0 +1,15 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependências (O MAIS IMPORTANTE)
+node_modules/
+
+# Build
+dist/
+dist-ssr/
+
+# Ambiente (Segurança)
+.env
+.env.local
