@@ -13,10 +13,11 @@ const HUD_HEIGHT = 140;
 const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
 const TURN_TIME_LIMIT = 25;
 
-// --- SISTEMA DE TRADUÇÃO ---
+// --- SISTEMA DE TRADUÇÃO (V30 - NOVOS TEXTOS) ---
 const TEXTS = {
     PT: {
-        SUBTITLE: "MULTIPLAYER E TREINO",
+        MAIN_TITLE: "PREPARE-SE PARA A BATALHA",
+        MAIN_SUBTITLE: "DERROTE A IA OU DESAFIE UM AMIGO",
         BTN_TRAINING: "⚔️ TREINO SOLO (VS IA)",
         HOST_TITLE: "CRIAR SALA",
         HOST_BTN: "CRIAR",
@@ -56,7 +57,8 @@ const TEXTS = {
         DESC_COLOSSUS: "Tanque pesado, muito lento."
     },
     EN: {
-        SUBTITLE: "MULTIPLAYER & TRAINING",
+        MAIN_TITLE: "PREPARE FOR BATTLE",
+        MAIN_SUBTITLE: "DEFEAT THE AI OR CHALLENGE A FRIEND",
         BTN_TRAINING: "⚔️ SOLO TRAINING (VS AI)",
         HOST_TITLE: "HOST GAME",
         HOST_BTN: "CREATE",
@@ -277,7 +279,7 @@ export default function App() {
             <div style={styles.backgroundWrapper}>
                 <div style={styles.gameContainer}>
                     
-                    {/* 🌍 LANGUAGE TOGGLE - CANTO ESQUERDO */}
+                    {/* 🌍 LANGUAGE TOGGLE */}
                     <div style={{
                         position: 'absolute', top: 15, left: 15, zIndex: 9999, 
                         display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333'
@@ -306,8 +308,10 @@ export default function App() {
                     {gameState === 'LOBBY' && (
                         <div style={styles.menuBox}>
                             <div style={styles.menuContent}>
-                                <h1 style={styles.title}>ASTRAL TACTICS</h1>
-                                <p style={{color:'#00ccff', marginBottom:30}}>{t('SUBTITLE')}</p>
+                                {/* 🔥 NOVOS TÍTULOS V30 */}
+                                <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
+                                <p style={{color:'#00ccff', marginBottom:30, fontSize:'1.2rem', textShadow:'0 0 10px #00ccff'}}>{t('MAIN_SUBTITLE')}</p>
+                                
                                 <button style={{...styles.btn, background: '#444', width:'100%', marginBottom: 30, border: '1px solid #666'}} onClick={startTraining}>
                                     {t('BTN_TRAINING')}
                                 </button>
@@ -359,7 +363,6 @@ export default function App() {
 
                     {gameState === 'PLAYING' && (
                         <>
-                            {/* 🔥 BOTÃO SURRENDER AGORA ALINHADO (CANTO DIREITO, TOP 15) */}
                             <div style={{position: 'absolute', top: 15, right: 15, zIndex: 1000}}>
                                 <button 
                                     style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
@@ -415,7 +418,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const config = {
             type: Phaser.AUTO, width: TOTAL_WIDTH, height: TOTAL_HEIGHT,
             backgroundColor: '#000000', parent: 'phaser-container',
-            disableVisibilityChange: true, // O JOGO NÃO PARA AO SAIR DA ABA
+            disableVisibilityChange: true, 
             physics: { 
                 default: 'arcade', 
                 arcade: { 
@@ -473,7 +476,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             txtSPD = scene.add.text(textX, startY + 30 + (lineHeight*2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
             txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
 
-            // Timer (ABAIXO DOS BOTÕES DE IDIOMA - Y=60)
             timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
@@ -610,20 +612,34 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             startTimer(scene);
         }
 
+        // 🔥 O RELÓGIO MUNDIAL: A CORREÇÃO V30
         function startTimer(scene) {
             if (timerEvent) timerEvent.remove();
+            
+            // Define o horário de término em TIMESTAMP (UTC)
+            const endTime = Date.now() + (TURN_TIME_LIMIT * 1000);
+            
             timeLeft = TURN_TIME_LIMIT;
             timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
             timerText.setColor('#ffffff');
 
             timerEvent = scene.time.addEvent({
-                delay: 1000,
+                delay: 200, 
                 callback: () => {
                     if (isExecuting || isWaiting) return;
-                    timeLeft--;
-                    timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
-                    if (timeLeft <= 10) timerText.setColor('#ff0000');
-                    if (timeLeft <= 0) submitTurn(scene);
+                    
+                    const now = Date.now();
+                    const secondsLeft = Math.ceil((endTime - now) / 1000);
+
+                    // Se houve atraso (navegador dormiu), atualiza imediatamente
+                    if (secondsLeft !== timeLeft) {
+                        timeLeft = secondsLeft;
+                        if (timeLeft < 0) timeLeft = 0;
+
+                        timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
+                        if (timeLeft <= 10) timerText.setColor('#ff0000');
+                        if (timeLeft <= 0) submitTurn(scene);
+                    }
                 },
                 loop: true
             });
@@ -710,7 +726,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             turnText.setText(t('EXECUTING_LABEL'));
             stopTimer();
             
-            // 🔥 SYNC HP LOGIC (HOST WRITES, GUEST READS)
             if (!isTraining) {
                 const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
                 if (!isHost) {
@@ -763,7 +778,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
             await new Promise(r => setTimeout(r, 2500));
 
-            // 🔥 HOST SALVA O ESTADO PÓS-TURNO
             if (isHost && !isTraining) {
                 const hpState = {};
                 [...playerSquad, ...enemySquad].forEach(ship => {
@@ -1020,7 +1034,7 @@ const styles = {
     menuBox: { width: '100%', height: '100%', backgroundImage: 'url(assets/intro.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 40 },
     menuContent: { width: '100%', padding: '20px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center' },
     instructionsBox: { textAlign: 'center', marginBottom: 20, textShadow: '0 2px 4px black' },
-    title: { fontSize: '3rem', color: '#00ccff', marginBottom: 10, fontFamily: 'Arial', fontWeight: '900', letterSpacing: '2px' },
+    title: { fontSize: '3rem', color: '#00ccff', marginBottom: 10, fontFamily: 'Arial', fontWeight: '900', letterSpacing: '2px', textAlign: 'center', textShadow: '0 0 15px #00ccff' },
     cardRow: { display: 'flex', gap: 20, marginBottom: 20 },
     card: { width: 160, padding: 15, background: 'rgba(0, 20, 40, 0.7)', border: '1px solid #005577', borderRadius: 8, cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', backdropFilter: 'blur(4px)', color: '#fff' },
     cardImage: { width: '80%', height: 'auto', display: 'block', margin: '0 auto 10px', filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.3))' },
