@@ -137,6 +137,9 @@ export default function App() {
 
     const t = (key) => TEXTS[lang][key] || key;
 
+    // ✅ (SURRENDER) evita rodar 2x em realtime
+    const surrenderHandledRef = useRef(false);
+
     // --- SONS (PLACEHOLDER) ---
     const playClick = () => { /* Audio */ };
 
@@ -167,44 +170,78 @@ export default function App() {
         } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
     };
 
+    // ✅ FIX: listener temporário (não fica empurrando o jogador pra PLAYING depois do GAMEOVER)
     const lockInSquad = async () => {
-        playClick(); if (mySquad.length !== 3) return;
-        if (isTraining) { setGameState('PLAYING'); return; }
+        playClick();
+        if (mySquad.length !== 3) return;
+
+        if (isTraining) {
+            setGameState('PLAYING');
+            return;
+        }
+
         const role = isHost ? 'hostSquad' : 'guestSquad';
         await update(ref(db, `rooms/${roomId}`), { [role]: mySquad });
+
         setStatusMsg(t('STATUS_WAITING'));
-        onValue(ref(db, `rooms/${roomId}`), (snapshot) => {
-            const data = snapshot.val(); if (data && data.hostSquad && data.guestSquad) { setGameState('PLAYING'); }
+
+        const roomRef = ref(db, `rooms/${roomId}`);
+        const unsubscribe = onValue(roomRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+
+            setGameState((prev) => {
+                const canStart = prev === 'MENU' || prev === 'LOBBY';
+                if (canStart && data.hostSquad && data.guestSquad) {
+                    unsubscribe(); // ✅ remove assim que iniciar
+                    return 'PLAYING';
+                }
+                return prev;
+            });
         });
     };
 
     const handleGameOver = (result) => { setGameResult(result); setGameState('GAMEOVER'); };
-    const restartGame = () => { playClick(); setRunId(prev => prev + 1); setGameState('PLAYING'); };
+
+    // ✅ FIX: reiniciar limpa o surrender (pra não re-aplicar GAMEOVER)
+    const restartGame = async () => {
+        playClick();
+        setRunId(prev => prev + 1);
+
+        if (!isTraining && roomId) {
+            try {
+                await set(ref(db, `rooms/${roomId}/surrender`), null);
+            } catch (e) {
+                console.error("Falha ao limpar surrender:", e);
+            }
+        }
+
+        setGameState('PLAYING');
+    };
+
     const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
     const getResultColor = () => { if (gameResult === 'VICTORY') return '#00ff00'; if (gameResult === 'DRAW') return '#ffff00'; return '#ff0000'; };
 
-    // 🔥 V34: O LISTENER SUPREMO DE SURRENDER 🔥
-    // Ele decide a vitória E a derrota para ambos os jogadores.
+    // ✅ FIX: Listener supremo de surrender (decide VITÓRIA/DERROTA para ambos)
     useEffect(() => {
-        if (!roomId || isTraining || gameState === 'LOBBY') return;
+        if (!roomId || isTraining) return;
+
+        surrenderHandledRef.current = false;
 
         const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
         const unsubscribe = onValue(surrenderRef, (snapshot) => {
             const whoSurrendered = snapshot.val();
-            if (whoSurrendered) {
-                // Aqui está a mágica: Comparar quem desistiu com quem eu sou.
-                const myRole = isHost ? 'HOST' : 'GUEST';
-                
-                if (whoSurrendered === myRole) {
-                    handleGameOver('DEFEAT'); // Eu desisti -> Perdi
-                } else {
-                    handleGameOver('VICTORY'); // O outro desistiu -> Ganhei
-                }
-            }
+            if (!whoSurrendered) return;
+
+            if (surrenderHandledRef.current) return;
+            surrenderHandledRef.current = true;
+
+            const myRole = isHost ? 'HOST' : 'GUEST';
+            handleGameOver(whoSurrendered === myRole ? 'DEFEAT' : 'VICTORY');
         });
 
         return () => unsubscribe();
-    }, [roomId, isTraining, isHost, gameState]);
+    }, [roomId, isTraining, isHost]);
 
     return (
         <>
@@ -283,13 +320,12 @@ export default function App() {
                                             return;
                                         }
 
-                                        // 🔥 V34: APENAS ESCREVE NO FIREBASE.
-                                        // A lógica de "quem ganha/perde" agora é exclusiva do Listener lá em cima.
+                                        // ✅ FIX: Apenas escreve no Firebase. O listener supremo decide vitória/derrota pros 2.
                                         try {
                                             await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST');
                                         } catch (err) {
                                             console.error("ERRO FIREBASE:", err);
-                                            alert("Erro de conexão: " + err.message);
+                                            alert("Erro de conexão: " + (err.message || "Tente novamente."));
                                         }
                                     }}
                                 >
@@ -338,6 +374,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         let isExecuting = false, isWaiting = false;
         let shipsGroup, obstacleGroup, projectileGroup;
         let unsubscribeTurns = null;
+
+        // ✅ FIX (SURRENDER): parar o jogo internamente quando alguém desistir
+        let matchEnded = false;
+        let unsubscribeSurrender = null;
+
         let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
 
         function preload() {
@@ -415,9 +456,26 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             if (!isTraining) {
                 const turnRef = ref(db, `rooms/${roomId}/turns`);
                 unsubscribeTurns = onValue(turnRef, (snapshot) => {
+                    if (matchEnded) return;
+
                     const turns = snapshot.val(); if (!turns) return;
                     const currentT = turnRefValue.current; const turnData = turns[currentT];
                     if (turnData && turnData.host && turnData.guest) { if (!isExecuting) runTurnResolution(scene, turnData); }
+                });
+
+                // ✅ FIX: Listener local para "congelar" a partida no Phaser quando surrender acontecer
+                const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
+                unsubscribeSurrender = onValue(surrenderRef, (snap) => {
+                    const who = snap.val();
+                    if (!who) return;
+
+                    matchEnded = true;
+
+                    try { if (timerEvent) timerEvent.remove(); } catch (e) {}
+                    try { scene.input.enabled = false; } catch (e) {}
+
+                    try { uiGroup.setVisible(false); } catch (e) {}
+                    try { staticHudGroup.setVisible(false); } catch (e) {}
                 });
             }
 
@@ -450,7 +508,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             attackHandle = scene.add.circle(0, 0, 10, 0xff0000).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
 
             moveHandle.on('drag', (pointer, dragX, dragY) => {
-                if (selectedShip && !isExecuting && !isWaiting) {
+                if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
                     const clamped = clampPoint(dragX, dragY); moveHandle.setPosition(clamped.x, clamped.y);
                     const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
                     const isBlocked = !checkRaycast(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
@@ -459,7 +517,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 }
             });
             attackHandle.on('drag', (pointer, dragX, dragY) => {
-                if (selectedShip && !isExecuting && !isWaiting) {
+                if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
                     const clamped = clampPoint(dragX, dragY); attackHandle.setPosition(clamped.x, clamped.y);
                     selectedShip.plannedAttack = { x: clamped.x, y: clamped.y };
                 }
@@ -477,7 +535,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             timerEvent = scene.time.addEvent({
                 delay: 200,
                 callback: () => {
-                    if (isExecuting || isWaiting) return;
+                    if (isExecuting || isWaiting || matchEnded) return;
                     const now = Date.now();
                     const secondsLeft = Math.ceil((endTime - now) / 1000);
                     if (secondsLeft !== timeLeft) {
@@ -507,6 +565,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         async function submitTurn(scene) {
+            if (matchEnded) return;
             if (isWaiting || isExecuting) return;
             stopTimer();
 
@@ -541,6 +600,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         async function runTurnResolution(scene, turnData) {
+            if (matchEnded) return;
+
             isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
             
             if (!isTraining) {
@@ -609,6 +670,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         
         function setupInputs(scene) {
             scene.input.on('pointerdown', (pointer) => {
+                if (matchEnded) return;
                 if (isExecuting || isWaiting) return; if (pointer.y > PLAY_HEIGHT) return; 
                 const draggedObjects = scene.input.hitTestPointer(pointer).filter(obj => obj === moveHandle || obj === attackHandle);
                 if (draggedObjects.length > 0) return;
@@ -721,6 +783,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
+            if(unsubscribeSurrender) unsubscribeSurrender();
+
             // ✅ LIMPEZA SEGURA DO PHASER (SEM ÁUDIO)
             if(gameRef.current) {
                 try {
