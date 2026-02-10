@@ -249,6 +249,26 @@ export default function App() {
         setGameState('GAMEOVER');
     };
 
+    // 🔥 NOVIDADE V30.8: O APP AGORA VIGIA A DESISTÊNCIA, NÃO O JOGO
+    // Isso garante que se o inimigo desistir, você ganha mesmo se o jogo travar.
+    useEffect(() => {
+        if (gameState !== 'PLAYING' || isTraining || !roomId) return;
+
+        const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
+        const unsub = onValue(surrenderRef, (snapshot) => {
+            const whoSurrendered = snapshot.val();
+            if (whoSurrendered) {
+                const myRole = isHost ? 'HOST' : 'GUEST';
+                // Se QUEM desistiu NÃO SOU EU -> ENTÃO EU VENCI
+                if (whoSurrendered !== myRole) {
+                    handleGameOver('VICTORY');
+                }
+            }
+        });
+
+        return () => unsub();
+    }, [gameState, isTraining, roomId, isHost]);
+
     const restartGame = () => {
         setRunId(prev => prev + 1);
         setGameState('PLAYING');
@@ -367,14 +387,12 @@ export default function App() {
                                     style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
                                     onClick={async () => {
                                         if (window.confirm(t('SURRENDER_CONFIRM'))) {
-                                            // 🔥 CORREÇÃO: "async/await" garante que a mensagem foi enviada
-                                            // antes de fechar a sua tela.
                                             if (!isTraining) {
                                                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
-                                                try {
-                                                    await set(surrenderRef, isHost ? 'HOST' : 'GUEST');
-                                                } catch(e) { console.error("Erro ao desistir", e); }
+                                                // Tenta avisar o servidor, mas não bloqueia a sua saída
+                                                try { await set(surrenderRef, isHost ? 'HOST' : 'GUEST'); } catch(e){}
                                             }
+                                            // Você perde imediatamente
                                             handleGameOver("DEFEAT");
                                         }
                                     }}
@@ -448,7 +466,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         let shipsGroup, obstacleGroup, projectileGroup;
         let obstaclesData = [];
         let unsubscribeTurns = null;
-        let unsubscribeSurrender = null;
         
         let timeLeft = TURN_TIME_LIMIT;
         let timerEvent = null;
@@ -540,16 +557,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                     }
                 });
 
-                const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
-                unsubscribeSurrender = onValue(surrenderRef, (snapshot) => {
-                    const whoSurrendered = snapshot.val();
-                    if (whoSurrendered) {
-                        // ✅ OUVE SE O INIMIGO DESISTIU (Para você ganhar)
-                        const myRole = isHost ? 'HOST' : 'GUEST';
-                        if (whoSurrendered !== myRole) onGameOver('VICTORY');
-                        // Nota: Se EU desisti, o botão de cima já me deu DEFEAT.
-                    }
-                });
+                // 🛑 O SURRENDER AGORA É VIGIADO PELO <App />, NÃO AQUI.
             }
 
             scene.physics.add.overlap(projectileGroup, shipsGroup, (projectile, ship) => {
@@ -615,6 +623,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             startTimer(scene);
         }
 
+        // 🔥 O RELÓGIO MUNDIAL (FIXED)
         function startTimer(scene) {
             if (timerEvent) timerEvent.remove();
             
@@ -1020,7 +1029,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
-            if(unsubscribeSurrender) unsubscribeSurrender();
             // ✅ LIMPEZA SEGURA DO PHASER (SEM ÁUDIO)
             if(gameRef.current) {
                 gameRef.current.destroy(true); 
