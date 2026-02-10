@@ -54,7 +54,9 @@ const TEXTS = {
         BTN_MENU: "MENU PRINCIPAL",
         DESC_FLUX: "Alta velocidade, baixa vida.",
         DESC_VECTOR: "Status balanceados.",
-        DESC_COLOSSUS: "Tanque pesado, muito lento."
+        DESC_COLOSSUS: "Tanque pesado, muito lento.",
+        MUTE: "MUTE",
+        UNMUTE: "SOM ON"
     },
     EN: {
         MAIN_TITLE: "PREPARE FOR BATTLE",
@@ -95,7 +97,9 @@ const TEXTS = {
         BTN_MENU: "MAIN MENU",
         DESC_FLUX: "High speed, low HP.",
         DESC_VECTOR: "Balanced stats.",
-        DESC_COLOSSUS: "Heavy tank, very slow."
+        DESC_COLOSSUS: "Heavy tank, very slow.",
+        MUTE: "MUTE",
+        UNMUTE: "SOUND ON"
     }
 };
 
@@ -133,8 +137,8 @@ export default function App() {
 
     const t = (key) => TEXTS[lang][key] || key;
 
-    // --- SONS REMOVIDOS ---
-    const playClick = () => { /* Som desligado por enquanto */ };
+    // --- SONS (PLACEHOLDER) ---
+    const playClick = () => { /* Audio */ };
 
     // --- LOBBY LOGIC ---
     const startTraining = () => { playClick(); setIsTraining(true); setIsHost(true); setRoomId('OFFLINE'); setGameState('MENU'); setStatusMsg(t('STATUS_P2_CONNECTED')); };
@@ -179,18 +183,22 @@ export default function App() {
     const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
     const getResultColor = () => { if (gameResult === 'VICTORY') return '#00ff00'; if (gameResult === 'DRAW') return '#ffff00'; return '#ff0000'; };
 
-    // 🔥 MONITOR DE VITÓRIA (O Suspensório)
+    // 🔥 V34: O LISTENER SUPREMO DE SURRENDER 🔥
+    // Ele decide a vitória E a derrota para ambos os jogadores.
     useEffect(() => {
-        if (!roomId || isTraining || gameState === 'LOBBY') return; 
+        if (!roomId || isTraining || gameState === 'LOBBY') return;
 
         const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
         const unsubscribe = onValue(surrenderRef, (snapshot) => {
             const whoSurrendered = snapshot.val();
             if (whoSurrendered) {
+                // Aqui está a mágica: Comparar quem desistiu com quem eu sou.
                 const myRole = isHost ? 'HOST' : 'GUEST';
-                // Se NÃO fui eu que desisti, então eu ganhei!
-                if (whoSurrendered !== myRole) {
-                    handleGameOver('VICTORY');
+                
+                if (whoSurrendered === myRole) {
+                    handleGameOver('DEFEAT'); // Eu desisti -> Perdi
+                } else {
+                    handleGameOver('VICTORY'); // O outro desistiu -> Ganhei
                 }
             }
         });
@@ -275,14 +283,13 @@ export default function App() {
                                             return;
                                         }
 
-                                        // 🔥 CORREÇÃO 1: Try/Catch com Alerta
+                                        // 🔥 V34: APENAS ESCREVE NO FIREBASE.
+                                        // A lógica de "quem ganha/perde" agora é exclusiva do Listener lá em cima.
                                         try {
                                             await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST');
-                                            // Se passar daqui, o Firebase aceitou. Posso morrer em paz.
-                                            handleGameOver("DEFEAT");
                                         } catch (err) {
-                                            console.error("ERRO AO RENDER-SE:", err);
-                                            alert("Erro ao conectar com o servidor: " + (err.message || "Tente novamente."));
+                                            console.error("ERRO FIREBASE:", err);
+                                            alert("Erro de conexão: " + err.message);
                                         }
                                     }}
                                 >
@@ -312,7 +319,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     const gameRef = useRef(null);
     const turnRefValue = useRef(1);
 
-    // 🔥 CORREÇÃO 2: Dependências corretas
     useEffect(() => {
         const config = {
             type: Phaser.AUTO, width: TOTAL_WIDTH, height: TOTAL_HEIGHT,
@@ -338,7 +344,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             this.load.image('bg', 'assets/background.png'); this.load.image('flux_img', 'assets/Flux.png');
             this.load.image('vector_img', 'assets/Vector.png'); this.load.image('colossus_img', 'assets/Colossus.png');
             this.load.image('asteroid_img', 'assets/Asteroid.png');
-            // 🔇 SEM SONS
         }
 
         async function create() {
@@ -358,6 +363,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             txtSPD = scene.add.text(textX, startY + 30 + (lineHeight*2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
             txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
             timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
+
+            // MUTE BTN
+            const soundBtn = scene.add.text(TOTAL_WIDTH - 80, 20, t('MUTE'), { font: '12px Arial', fill: '#888', backgroundColor: '#222', padding: 5 }).setInteractive().setDepth(1000);
+            let isMuted = false;
+            soundBtn.on('pointerdown', () => { isMuted = !isMuted; scene.sound.mute = isMuted; soundBtn.setText(isMuted ? t('UNMUTE') : t('MUTE')); soundBtn.setColor(isMuted ? '#ff0000' : '#888'); });
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
             graphics = scene.add.graphics();
@@ -499,6 +509,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         async function submitTurn(scene) {
             if (isWaiting || isExecuting) return;
             stopTimer();
+
+            // 🔥 V34: SEGURANÇA EXTRA - Não deixa enviar turno se já tiver desistência
+            if (!isTraining) {
+                const sSnap = await get(ref(db, `rooms/${roomId}/surrender`));
+                if (sSnap.exists() && sSnap.val()) return; // Jogo já acabou
+            }
+
             const myMoves = playerSquad.map(s => ({ index: s.squadIndex, move: s.plannedMove ? { x: s.plannedMove.x, y: s.plannedMove.y } : null, attack: s.plannedAttack ? { x: s.plannedAttack.x, y: s.plannedAttack.y, weapon: s.weapon.id } : null }));
             if (isTraining) {
                 const aiMoves = enemySquad.map(e => {
@@ -704,12 +721,17 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
+            // ✅ LIMPEZA SEGURA DO PHASER (SEM ÁUDIO)
             if(gameRef.current) {
+                try {
+                    const scenes = gameRef.current.scene.getScenes(true);
+                    if(scenes) { scenes.forEach(scene => { if(scene.sound) { scene.sound.stopAll(); scene.sound.removeAll(); }}); }
+                } catch(e) {}
                 gameRef.current.destroy(true); 
                 gameRef.current = null;
             }
         }
-    }, [roomId, isHost, isTraining, lang]); // ✅ DEPENDÊNCIAS CORRETAS
+    }, [roomId, isHost, isTraining, lang]); // ✅ CORREÇÃO: Dependências para evitar "Congelamento"
 
     return <div id="phaser-container" />;
 };
