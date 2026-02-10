@@ -13,7 +13,7 @@ const HUD_HEIGHT = 140;
 const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
 const TURN_TIME_LIMIT = 25;
 
-// --- LISTA DE MÚSICAS ---
+// --- LISTA DE MÚSICAS (PLAYLIST) ---
 const MUSIC_TRACKS = [
     'assets/audio/music_1.mp3',
     'assets/audio/music_2.mp3',
@@ -139,41 +139,43 @@ export default function App() {
     const [isTraining, setIsTraining] = useState(false);
     
     // --- ÁUDIO GLOBAL ---
-    const [isGlobalMuted, setIsGlobalMuted] = useState(false); // Master Mute (Música + SFX)
-    const [isMusicPlaying, setIsMusicPlaying] = useState(true); // Só Música (Play/Pause)
+    const [isGlobalMuted, setIsGlobalMuted] = useState(false);
+    const [isMusicPlaying, setIsMusicPlaying] = useState(true);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-    const audioRef = useRef(null); // Referência ao elemento <audio>
+    const audioRef = useRef(null);
 
     const t = (key) => TEXTS[lang][key] || key;
     const surrenderHandledRef = useRef(false);
 
-    // --- PLAYER DE MÚSICA LOGIC ---
+    // 🔥 AUTOPLAY INTELIGENTE
     useEffect(() => {
-        if (audioRef.current) {
-            audioRef.current.volume = 0.3; // Volume da música um pouco mais baixo
-            if (isGlobalMuted) {
-                audioRef.current.pause();
-            } else if (isMusicPlaying) {
-                audioRef.current.play().catch(e => console.log("Autoplay bloqueado:", e));
-            } else {
-                audioRef.current.pause();
+        // Tenta tocar assim que carrega
+        if (audioRef.current && !isGlobalMuted && isMusicPlaying) {
+            audioRef.current.volume = 0.4;
+            const playPromise = audioRef.current.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
+                    // Se o navegador bloquear, adiciona um ouvinte para o primeiro clique
+                    console.log("Autoplay bloqueado. Aguardando interação...");
+                    const unlockAudio = () => {
+                        if (audioRef.current && isMusicPlaying && !isGlobalMuted) {
+                            audioRef.current.play();
+                        }
+                        window.removeEventListener('click', unlockAudio);
+                        window.removeEventListener('keydown', unlockAudio);
+                    };
+                    window.addEventListener('click', unlockAudio);
+                    window.addEventListener('keydown', unlockAudio);
+                });
             }
         }
     }, [isGlobalMuted, isMusicPlaying, currentTrackIndex]);
 
-    const handleNextTrack = () => {
-        setCurrentTrackIndex((prev) => (prev + 1) % MUSIC_TRACKS.length);
-    };
+    const handleNextTrack = () => { setCurrentTrackIndex((prev) => (prev + 1) % MUSIC_TRACKS.length); };
+    const handlePrevTrack = () => { setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length); };
+    const handleMusicEnded = () => { handleNextTrack(); };
 
-    const handlePrevTrack = () => {
-        setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length);
-    };
-
-    const handleMusicEnded = () => {
-        handleNextTrack(); // Loop infinito automático
-    };
-
-    // Função segura para tocar SFX de clique na UI (React)
+    // SFX Click Global
     const playClick = () => { 
         if(isGlobalMuted) return;
         const audio = new Audio('assets/audio/click.mp3');
@@ -272,35 +274,40 @@ export default function App() {
                 * { box-sizing: border-box; user-select: none; }
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
-                .music-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #fff; padding: 0 5px; opacity: 0.7; transition: 0.2s; }
-                .music-btn:hover { opacity: 1; transform: scale(1.1); }
+                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #fff; padding: 0 8px; opacity: 0.8; transition: 0.2s; }
+                .music-btn:hover { opacity: 1; transform: scale(1.1); color: #00ccff; }
             `}</style>
 
-            {/* 🎵 ELEMENTO DE ÁUDIO INVISÍVEL (Persiste entre as telas) */}
+            {/* 🎵 ELEMENTO DE ÁUDIO (Autoplay + Playlist Circular) */}
             <audio 
                 ref={audioRef} 
                 src={MUSIC_TRACKS[currentTrackIndex]} 
                 onEnded={handleMusicEnded}
-                autoPlay 
+                loop={false} // Loop manual via onEnded
             />
 
             <div style={styles.backgroundWrapper}>
                 <div style={styles.gameContainer}>
-                    {/* 🌍 LANGUAGE TOGGLE */}
                     <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
                         <button onClick={()=>setLang('PT')} style={{ color: lang==='PT'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>PT</button>
                         <div style={{width:1, background:'#555'}}></div>
                         <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
                     </div>
 
-                    {/* 🎧 DOCK MULTIMÍDIA (PLAYER + MASTER MUTE) */}
+                    {/* 🎧 DOCK MULTIMÍDIA (Colado embaixo, à direita) */}
                     <div style={{
-                        position: 'absolute', bottom: 20, right: 20, zIndex: 9999,
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        background: 'rgba(0,0,0,0.8)', padding: '8px 15px', borderRadius: '30px',
-                        border: '1px solid #444', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                        position: 'absolute', 
+                        bottom: 0, 
+                        right: 0, 
+                        zIndex: 9999,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        background: 'linear-gradient(to top, #000 0%, rgba(0,0,0,0.8) 100%)', 
+                        padding: '8px 12px', 
+                        borderTopLeftRadius: '12px',
+                        borderTop: '1px solid #333',
+                        borderLeft: '1px solid #333',
+                        boxShadow: '0 -2px 10px rgba(0,0,0,0.5)'
                     }}>
-                        {/* Controles de Música (Só aparecem se não estiver Mute Geral) */}
                         {!isGlobalMuted && (
                             <>
                                 <button className="music-btn" onClick={handlePrevTrack} title="Anterior">⏮️</button>
@@ -308,14 +315,13 @@ export default function App() {
                                     {isMusicPlaying ? '⏸️' : '▶️'}
                                 </button>
                                 <button className="music-btn" onClick={handleNextTrack} title="Próxima">⏭️</button>
-                                <div style={{width:1, height:20, background:'#555', margin:'0 5px'}}></div>
+                                <div style={{width:1, height:15, background:'#555', margin:'0 5px'}}></div>
                             </>
                         )}
-                        {/* Master Mute */}
                         <button 
                             className="music-btn" 
                             onClick={() => setIsGlobalMuted(!isGlobalMuted)} 
-                            title="Master Mute (Jogo todo)"
+                            title="Master Mute (Som Geral)"
                             style={{color: isGlobalMuted ? '#ff4444' : '#00ff00'}}
                         >
                             {isGlobalMuted ? '🔇' : '🔊'}
@@ -389,7 +395,7 @@ export default function App() {
                                 key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
                                 roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} 
                                 onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} 
-                                isGlobalMuted={isGlobalMuted} // Passa o Mute para o Phaser
+                                isGlobalMuted={isGlobalMuted} 
                             />
                         </>
                     )}
@@ -408,12 +414,10 @@ export default function App() {
     );
 }
 
-// --- PHASER GAME COMPONENT ---
 const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t, isGlobalMuted }) => {
     const gameRef = useRef(null);
     const turnRefValue = useRef(1);
 
-    // 🔥 Sincroniza SFX com o Master Mute
     useEffect(() => {
         if(gameRef.current) {
             gameRef.current.sound.mute = isGlobalMuted;
@@ -432,7 +436,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         const game = new Phaser.Game(config);
         gameRef.current = game;
-        game.sound.mute = isGlobalMuted; // Inicializa já mutado se necessário
+        game.sound.mute = isGlobalMuted;
 
         let playerSquad = [], enemySquad = [];
         let selectedShip = null, moveHandle = null, attackHandle = null;
@@ -444,7 +448,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         let unsubscribeSurrender = null;
         let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
         
-        // SFX Variaveis
         let sfxShoot, sfxExplosion, sfxClick, sfxCrash;
 
         function preload() {
@@ -452,7 +455,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             this.load.image('vector_img', 'assets/Vector.png'); this.load.image('colossus_img', 'assets/Colossus.png');
             this.load.image('asteroid_img', 'assets/Asteroid.png');
             
-            // 🔊 CARREGANDO SFX
+            // 🔊 SFX DO PHASER
             this.load.audio('shoot', 'assets/audio/shoot.mp3');
             this.load.audio('explosion', 'assets/audio/explosion.mp3');
             this.load.audio('click', 'assets/audio/click.mp3');
@@ -464,7 +467,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             scene.input.mouse.disableContextMenu();
             scene.add.tileSprite(TOTAL_WIDTH/2, PLAY_HEIGHT/2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
 
-            // INICIANDO SFX (Safe Load)
             try {
                 sfxShoot = scene.sound.add('shoot', { volume: 0.3 });
                 sfxExplosion = scene.sound.add('explosion', { volume: 0.5 });
@@ -564,7 +566,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 if (a.faction === b.faction) return; if (!isExecuting) return;
                 if (a.hasCrashed || b.hasCrashed) return; if (a.uniqueId > b.uniqueId) return; 
                 scene.cameras.main.shake(100, 0.01);
-                // 🔊 SOM CRASH
                 if(sfxCrash) sfxCrash.play();
                 takeDamage(scene, a, 20); takeDamage(scene, b, 20);
                 a.hasCrashed = true; b.hasCrashed = true;
