@@ -13,7 +13,7 @@ const HUD_HEIGHT = 140;
 const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
 const TURN_TIME_LIMIT = 25;
 
-// --- LISTA DE MÚSICAS (PLAYLIST) ---
+// --- LISTA DE MÚSICAS ---
 const MUSIC_TRACKS = [
     'assets/audio/music_1.mp3',
     'assets/audio/music_2.mp3',
@@ -147,19 +147,23 @@ export default function App() {
     const t = (key) => TEXTS[lang][key] || key;
     const surrenderHandledRef = useRef(false);
 
-    // 🔥 AUTOPLAY INTELIGENTE
+    // 🔥 V40: LÓGICA DE ÁUDIO ROBUSTA (AUTOPLAY + UNLOCK)
     useEffect(() => {
-        // Tenta tocar assim que carrega
-        if (audioRef.current && !isGlobalMuted && isMusicPlaying) {
-            audioRef.current.volume = 0.4;
+        if (!audioRef.current) return;
+
+        audioRef.current.volume = 0.3; // Volume da música um pouco mais baixo
+
+        if (isGlobalMuted) {
+            audioRef.current.pause();
+        } else if (isMusicPlaying) {
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
-                playPromise.catch(() => {
-                    // Se o navegador bloquear, adiciona um ouvinte para o primeiro clique
-                    console.log("Autoplay bloqueado. Aguardando interação...");
+                playPromise.catch(error => {
+                    // Se o navegador bloquear, adicionamos um ouvinte silencioso para o primeiro clique
+                    console.log("Autoplay bloqueado. Aguardando interação do usuário...");
                     const unlockAudio = () => {
                         if (audioRef.current && isMusicPlaying && !isGlobalMuted) {
-                            audioRef.current.play();
+                            audioRef.current.play().catch(e => console.error("Erro ao tocar:", e));
                         }
                         window.removeEventListener('click', unlockAudio);
                         window.removeEventListener('keydown', unlockAudio);
@@ -168,6 +172,8 @@ export default function App() {
                     window.addEventListener('keydown', unlockAudio);
                 });
             }
+        } else {
+            audioRef.current.pause();
         }
     }, [isGlobalMuted, isMusicPlaying, currentTrackIndex]);
 
@@ -175,7 +181,7 @@ export default function App() {
     const handlePrevTrack = () => { setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length); };
     const handleMusicEnded = () => { handleNextTrack(); };
 
-    // SFX Click Global
+    // SFX Click Global (seguro)
     const playClick = () => { 
         if(isGlobalMuted) return;
         const audio = new Audio('assets/audio/click.mp3');
@@ -274,16 +280,16 @@ export default function App() {
                 * { box-sizing: border-box; user-select: none; }
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
-                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #fff; padding: 0 8px; opacity: 0.8; transition: 0.2s; }
-                .music-btn:hover { opacity: 1; transform: scale(1.1); color: #00ccff; }
+                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #00ccff; padding: 0 8px; opacity: 0.8; transition: 0.2s; }
+                .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
             `}</style>
 
-            {/* 🎵 ELEMENTO DE ÁUDIO (Autoplay + Playlist Circular) */}
+            {/* 🎵 ELEMENTO DE ÁUDIO (Sem autoplay no HTML, controlado via React) */}
             <audio 
                 ref={audioRef} 
                 src={MUSIC_TRACKS[currentTrackIndex]} 
                 onEnded={handleMusicEnded}
-                loop={false} // Loop manual via onEnded
+                loop={false}
             />
 
             <div style={styles.backgroundWrapper}>
@@ -294,19 +300,22 @@ export default function App() {
                         <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
                     </div>
 
-                    {/* 🎧 DOCK MULTIMÍDIA (Colado embaixo, à direita) */}
+                    {/* 🎧 DOCK MULTIMÍDIA (Colado embaixo, à direita, com visual Glass) */}
                     <div style={{
                         position: 'absolute', 
                         bottom: 0, 
                         right: 0, 
                         zIndex: 9999,
                         display: 'flex', alignItems: 'center', gap: 5,
-                        background: 'linear-gradient(to top, #000 0%, rgba(0,0,0,0.8) 100%)', 
-                        padding: '8px 12px', 
-                        borderTopLeftRadius: '12px',
-                        borderTop: '1px solid #333',
-                        borderLeft: '1px solid #333',
-                        boxShadow: '0 -2px 10px rgba(0,0,0,0.5)'
+                        background: 'rgba(20, 40, 60, 0.85)', 
+                        padding: '10px 15px', 
+                        borderTopLeftRadius: '15px',
+                        borderTop: '2px solid #005577',
+                        borderLeft: '2px solid #005577',
+                        borderBottom: 'none',
+                        borderRight: 'none',
+                        boxShadow: '0 0 15px rgba(0, 204, 255, 0.2)',
+                        backdropFilter: 'blur(5px)'
                     }}>
                         {!isGlobalMuted && (
                             <>
@@ -315,14 +324,14 @@ export default function App() {
                                     {isMusicPlaying ? '⏸️' : '▶️'}
                                 </button>
                                 <button className="music-btn" onClick={handleNextTrack} title="Próxima">⏭️</button>
-                                <div style={{width:1, height:15, background:'#555', margin:'0 5px'}}></div>
+                                <div style={{width:1, height:18, background:'#005577', margin:'0 8px'}}></div>
                             </>
                         )}
                         <button 
                             className="music-btn" 
                             onClick={() => setIsGlobalMuted(!isGlobalMuted)} 
-                            title="Master Mute (Som Geral)"
-                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00'}}
+                            title="Master Mute"
+                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00', fontSize: '18px'}}
                         >
                             {isGlobalMuted ? '🔇' : '🔊'}
                         </button>
@@ -414,6 +423,7 @@ export default function App() {
     );
 }
 
+// --- PHASER GAME COMPONENT ---
 const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t, isGlobalMuted }) => {
     const gameRef = useRef(null);
     const turnRefValue = useRef(1);
@@ -760,7 +770,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         function fireWeapon(scene, shooter, tx, ty) {
-            // 🔊 SOM TIRO
             if(sfxShoot) sfxShoot.play();
             const weapon = shooter.weapon; const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
             const spawnBullet = (angleOffset) => {
@@ -782,7 +791,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         function takeDamage(scene, ship, dmg) {
             ship.hp -= dmg; showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
             if (ship.hp <= 0) {
-                // 🔊 SOM EXPLOSÃO
                 if(sfxExplosion) sfxExplosion.play();
                 const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff); scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
                 ship.body.enable = false; ship.setActive(false).setVisible(false); if (selectedShip === ship) deselectAll();
