@@ -365,12 +365,15 @@ export default function App() {
                             <div style={{position: 'absolute', top: 15, right: 15, zIndex: 1000}}>
                                 <button 
                                     style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         if (window.confirm(t('SURRENDER_CONFIRM'))) {
-                                            // 🔥 CORREÇÃO: Mata o jogo IMEDIATAMENTE e avisa o servidor
+                                            // 🔥 CORREÇÃO: "async/await" garante que a mensagem foi enviada
+                                            // antes de fechar a sua tela.
                                             if (!isTraining) {
                                                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
-                                                set(surrenderRef, isHost ? 'HOST' : 'GUEST');
+                                                try {
+                                                    await set(surrenderRef, isHost ? 'HOST' : 'GUEST');
+                                                } catch(e) { console.error("Erro ao desistir", e); }
                                             }
                                             handleGameOver("DEFEAT");
                                         }
@@ -612,7 +615,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             startTimer(scene);
         }
 
-        // 🔥 O RELÓGIO MUNDIAL (FIXED)
         function startTimer(scene) {
             if (timerEvent) timerEvent.remove();
             
