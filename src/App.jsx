@@ -274,7 +274,7 @@ export default function App() {
                 * { box-sizing: border-box; user-select: none; }
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
-                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #00ccff; padding: 0 10px; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #00ccff; padding: 0 8px; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
                 .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
             `}</style>
 
@@ -293,50 +293,42 @@ export default function App() {
                         <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
                     </div>
 
-                    {/* 🎧 DOCK MULTIMÍDIA "FECHADO" (Refinado conforme referência) */}
+                    {/* 🎧 DOCK MULTIMÍDIA V42 (Cápsula Flutuante Compacta) */}
                     <div style={{
                         position: 'absolute', 
-                        bottom: 0, 
-                        right: 0, 
+                        bottom: 15,  // GAP do fundo
+                        right: 15,   // GAP da direita
                         zIndex: 9999,
                         display: 'flex', alignItems: 'center',
                         
-                        // ✨ VISUAL "HUD" SÓLIDO
-                        background: '#0a141e', // Azul bem escuro, quase preto (Sólido)
-                        padding: '10px 18px', 
-                        
-                        // BORDA EM NEON CIANO
-                        borderTopLeftRadius: '25px', // Curva suave como na imagem
-                        borderTop: '2px solid #00ccff',
-                        borderLeft: '2px solid #00ccff',
-                        borderBottom: 'none',
-                        borderRight: 'none',
-                        
-                        // SOMBRA/GLOW
-                        boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 20px rgba(0,0,0,0.8)'
+                        background: '#0a141e', // Fundo Sólido
+                        padding: '6px 12px',   // Bem mais compacto
+                        borderRadius: '30px',  // Formato Pílula/Cápsula 360º
+                        border: '2px solid #00ccff', // Borda Neon 360º
+                        boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)'
                     }}>
                         {!isGlobalMuted && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                 <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
-                                    <span style={{fontSize: '20px'}}>⏮</span>
+                                    <span style={{fontSize: '16px'}}>⏮</span>
                                 </button>
                                 <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
-                                    <span style={{fontSize: '22px'}}>{isMusicPlaying ? '⏸' : '▶'}</span>
+                                    <span style={{fontSize: '18px'}}>{isMusicPlaying ? '⏸' : '▶'}</span>
                                 </button>
                                 <button className="music-btn" onClick={handleNextTrack} title="Próxima">
-                                    <span style={{fontSize: '20px'}}>⏭</span>
+                                    <span style={{fontSize: '16px'}}>⏭</span>
                                 </button>
                                 {/* Separador Vertical */}
-                                <div style={{width: 1, height: 24, background: '#00ccff', margin: '0 12px', opacity: 0.3}}></div>
+                                <div style={{width: 1, height: 18, background: '#00ccff', margin: '0 8px', opacity: 0.3}}></div>
                             </div>
                         )}
                         <button 
                             className="music-btn" 
                             onClick={() => setIsGlobalMuted(!isGlobalMuted)} 
                             title="Master Mute"
-                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00', marginLeft: isGlobalMuted ? 0 : 5}}
+                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00', marginLeft: isGlobalMuted ? 0 : 2}}
                         >
-                            <span style={{fontSize: '22px'}}>{isGlobalMuted ? '🔇' : '🔊'}</span>
+                            <span style={{fontSize: '18px'}}>{isGlobalMuted ? '🔇' : '🔊'}</span>
                         </button>
                     </div>
 
@@ -860,12 +852,17 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
+            // ✅ LIMPEZA SEGURA DO PHASER (COM PROTEÇÃO DE ÁUDIO)
             if(gameRef.current) {
+                try {
+                    const scenes = gameRef.current.scene.getScenes(true);
+                    if(scenes) { scenes.forEach(scene => { if(scene.sound) { scene.sound.stopAll(); scene.sound.removeAll(); }}); }
+                } catch(e) {}
                 gameRef.current.destroy(true); 
                 gameRef.current = null;
             }
         }
-    }, [roomId, isHost, isTraining, lang]); // ✅ DEPENDÊNCIAS CORRETAS
+    }, [roomId, isHost, isTraining, lang]); // ✅ CORREÇÃO: Dependências para evitar "Congelamento"
 
     return <div id="phaser-container" />;
 };
