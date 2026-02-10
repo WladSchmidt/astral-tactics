@@ -417,9 +417,90 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
 
             // MUTE BTN
-            const soundBtn = scene.add.text(TOTAL_WIDTH - 80, 20, t('MUTE'), { font: '12px Arial', fill: '#888', backgroundColor: '#222', padding: 5 }).setInteractive().setDepth(1000);
-            let isMuted = false;
-            soundBtn.on('pointerdown', () => { isMuted = !isMuted; scene.sound.mute = isMuted; soundBtn.setText(isMuted ? t('UNMUTE') : t('MUTE')); soundBtn.setColor(isMuted ? '#ff0000' : '#888'); });
+            // 🔊 VOLUME UI (HUD - abaixo do EXECUTAR)
+const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
+
+// Posição: abaixo do botão EXECUTAR (que fica em x = TOTAL_WIDTH - 120, y = centerY)
+const volX = TOTAL_WIDTH - 120;
+const volIconY = centerY + 32;
+const volSliderY = centerY + 52;
+
+let isMuted = false;
+let currentVolume = scene.sound.volume ?? 1;
+
+// Ícone 🔊 / 🔇
+const volIcon = scene.add.text(volX - 70, volIconY, '🔊', {
+  font: '18px Arial',
+  fill: '#ffffff',
+  backgroundColor: '#222',
+  padding: 6
+})
+.setOrigin(0.5)
+.setInteractive({ useHandCursor: true })
+.setDepth(1000);
+
+volIcon.on('pointerdown', () => {
+  isMuted = !isMuted;
+  scene.sound.mute = isMuted;
+  volIcon.setText(isMuted ? '🔇' : '🔊');
+});
+
+// Slider (barra)
+const sliderW = 110;
+const sliderH = 6;
+
+const sliderBg = scene.add.rectangle(volX + 10, volSliderY, sliderW, sliderH, 0x333333)
+  .setOrigin(0.5)
+  .setDepth(1000);
+
+// “Preenchimento” do volume (da esquerda para a direita)
+const sliderFill = scene.add.rectangle(
+  (volX + 10) - (sliderW / 2) + (sliderW * currentVolume / 2),
+  volSliderY,
+  sliderW * currentVolume,
+  sliderH,
+  0x00ccff
+)
+.setOrigin(0.5)
+.setDepth(1001);
+
+// Handle (bolinha)
+const handle = scene.add.circle(
+  (volX + 10) - (sliderW / 2) + (sliderW * currentVolume),
+  volSliderY,
+  8,
+  0xffffff
+)
+.setStrokeStyle(2, 0x000000)
+.setDepth(1002)
+.setInteractive({ useHandCursor: true, draggable: true });
+
+handle.on('drag', (pointer, dragX) => {
+  // clamp do handle dentro do slider
+  const left = (volX + 10) - (sliderW / 2);
+  const right = (volX + 10) + (sliderW / 2);
+  const x = Phaser.Math.Clamp(dragX, left, right);
+
+  handle.x = x;
+
+  // volume (0..1)
+  const v = (x - left) / sliderW;
+  currentVolume = v;
+
+  // Se mexeu no slider, faz sentido “desmutar”
+  if (isMuted && v > 0) {
+    isMuted = false;
+    scene.sound.mute = false;
+    volIcon.setText('🔊');
+  }
+
+  scene.sound.volume = currentVolume;
+
+  // atualiza fill
+  sliderFill.width = sliderW * currentVolume;
+  sliderFill.x = left + (sliderFill.width / 2);
+});
+
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
             graphics = scene.add.graphics();
