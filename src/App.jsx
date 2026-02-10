@@ -13,7 +13,7 @@ const HUD_HEIGHT = 140;
 const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
 const TURN_TIME_LIMIT = 25;
 
-// --- SISTEMA DE TRADUÇÃO (V30 - NOVOS TEXTOS) ---
+// --- SISTEMA DE TRADUÇÃO ---
 const TEXTS = {
     PT: {
         MAIN_TITLE: "PREPARE-SE PARA A BATALHA",
@@ -54,9 +54,7 @@ const TEXTS = {
         BTN_MENU: "MENU PRINCIPAL",
         DESC_FLUX: "Alta velocidade, baixa vida.",
         DESC_VECTOR: "Status balanceados.",
-        DESC_COLOSSUS: "Tanque pesado, muito lento.",
-        MUTE: "MUTE",
-        UNMUTE: "SOM ON"
+        DESC_COLOSSUS: "Tanque pesado, muito lento."
     },
     EN: {
         MAIN_TITLE: "PREPARE FOR BATTLE",
@@ -97,9 +95,7 @@ const TEXTS = {
         BTN_MENU: "MAIN MENU",
         DESC_FLUX: "High speed, low HP.",
         DESC_VECTOR: "Balanced stats.",
-        DESC_COLOSSUS: "Heavy tank, very slow.",
-        MUTE: "MUTE",
-        UNMUTE: "SOUND ON"
+        DESC_COLOSSUS: "Heavy tank, very slow."
     }
 };
 
@@ -165,37 +161,49 @@ export default function App() {
 
     const t = (key) => TEXTS[lang][key] || key;
 
-    // 🔥 CLICK SOUND (LOBBY)
-    const playClick = () => {
-        const audio = new Audio('assets/audio/click.mp3');
-        audio.volume = 0.5;
-        audio.play().catch(e => { /* Ignora erro se usuário não interagiu ainda */ });
+    const startTraining = () => {
+        setIsTraining(true);
+        setIsHost(true);
+        setRoomId('OFFLINE');
+        setGameState('MENU');
+        setStatusMsg(t('STATUS_P2_CONNECTED'));
     };
 
-    const startTraining = () => { playClick(); setIsTraining(true); setIsHost(true); setRoomId('OFFLINE'); setGameState('MENU'); setStatusMsg(t('STATUS_P2_CONNECTED')); };
-
     const createRoom = async () => {
-        playClick();
         setIsTraining(false);
         setStatusMsg(t('STATUS_CREATING'));
         try {
             const user = await signInAnonymously(auth);
             const uid = user.user.uid;
             setIsHost(true);
+
             const code = Math.random().toString(36).substring(2, 6).toUpperCase();
             setRoomId(code);
             const mapData = generateMapData();
-            await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData });
+
+            await set(ref(db, `rooms/${code}`), {
+                host: uid,
+                status: 'LOBBY',
+                turn: 1,
+                map: mapData
+            });
+
             setStatusMsg(t('STATUS_CREATED').replace('{0}', code));
+
             onValue(ref(db, `rooms/${code}`), (snapshot) => {
                 const data = snapshot.val();
-                if (data && data.guest) { setStatusMsg(t('STATUS_P2_CONNECTED')); setGameState('MENU'); }
+                if (data && data.guest) {
+                    setStatusMsg(t('STATUS_P2_CONNECTED'));
+                    setGameState('MENU'); 
+                }
             });
-        } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
+        } catch (e) {
+            console.error(e);
+            setStatusMsg(t('STATUS_ERROR') + e.message);
+        }
     };
 
     const joinRoom = async () => {
-        playClick();
         if (joinCode.length !== 4) return;
         setIsTraining(false);
         setStatusMsg(t('STATUS_JOINING'));
@@ -203,30 +211,60 @@ export default function App() {
             const user = await signInAnonymously(auth);
             const uid = user.user.uid;
             setIsHost(false);
+
             const rRef = ref(db, `rooms/${joinCode}`);
             const snap = await get(rRef);
-            if (snap.exists()) { await update(rRef, { guest: uid }); setRoomId(joinCode); setGameState('MENU'); } 
-            else { setStatusMsg(t('STATUS_NOT_FOUND')); }
-        } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
+
+            if (snap.exists()) {
+                await update(rRef, { guest: uid });
+                setRoomId(joinCode);
+                setGameState('MENU');
+            } else {
+                setStatusMsg(t('STATUS_NOT_FOUND'));
+            }
+        } catch (e) {
+            console.error(e);
+            setStatusMsg(t('STATUS_ERROR') + e.message);
+        }
     };
 
     const lockInSquad = async () => {
-        playClick();
         if (mySquad.length !== 3) return;
         if (isTraining) { setGameState('PLAYING'); return; }
+
         const role = isHost ? 'hostSquad' : 'guestSquad';
         await update(ref(db, `rooms/${roomId}`), { [role]: mySquad });
         setStatusMsg(t('STATUS_WAITING'));
+
         onValue(ref(db, `rooms/${roomId}`), (snapshot) => {
             const data = snapshot.val();
-            if (data && data.hostSquad && data.guestSquad) { setGameState('PLAYING'); }
+            if (data && data.hostSquad && data.guestSquad) {
+                setGameState('PLAYING');
+            }
         });
     };
 
-    const handleGameOver = (result) => { setGameResult(result); setGameState('GAMEOVER'); };
-    const restartGame = () => { playClick(); setRunId(prev => prev + 1); setGameState('PLAYING'); };
-    const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
-    const getResultColor = () => { if (gameResult === 'VICTORY') return '#00ff00'; if (gameResult === 'DRAW') return '#ffff00'; return '#ff0000'; };
+    const handleGameOver = (result) => {
+        setGameResult(result);
+        setGameState('GAMEOVER');
+    };
+
+    const restartGame = () => {
+        setRunId(prev => prev + 1);
+        setGameState('PLAYING');
+    };
+
+    const backToMenu = () => {
+        setMySquad([]);
+        setGameState('LOBBY');
+        window.location.reload(); 
+    };
+
+    const getResultColor = () => {
+        if (gameResult === 'VICTORY') return '#00ff00';
+        if (gameResult === 'DRAW') return '#ffff00';
+        return '#ff0000';
+    };
 
     return (
         <>
@@ -236,20 +274,46 @@ export default function App() {
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
             `}</style>
+
             <div style={styles.backgroundWrapper}>
                 <div style={styles.gameContainer}>
-                    <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
-                        <button onClick={()=>setLang('PT')} style={{ color: lang==='PT'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>PT</button>
+                    
+                    {/* 🌍 LANGUAGE TOGGLE */}
+                    <div style={{
+                        position: 'absolute', top: 15, left: 15, zIndex: 9999, 
+                        display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333'
+                    }}>
+                        <button 
+                            onClick={()=>setLang('PT')} 
+                            style={{
+                                color: lang==='PT'?'#00ff00':'#888', 
+                                fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px'
+                            }}
+                        >
+                            PT
+                        </button>
                         <div style={{width:1, background:'#555'}}></div>
-                        <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
+                        <button 
+                            onClick={()=>setLang('EN')} 
+                            style={{
+                                color: lang==='EN'?'#00ff00':'#888', 
+                                fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px'
+                            }}
+                        >
+                            EN
+                        </button>
                     </div>
 
                     {gameState === 'LOBBY' && (
                         <div style={styles.menuBox}>
                             <div style={styles.menuContent}>
+                                {/* 🔥 NOVOS TÍTULOS V30 */}
                                 <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
                                 <p style={{color:'#00ccff', marginBottom:30, fontSize:'1.2rem', textShadow:'0 0 10px #00ccff'}}>{t('MAIN_SUBTITLE')}</p>
-                                <button style={{...styles.btn, background: '#444', width:'100%', marginBottom: 30, border: '1px solid #666'}} onClick={startTraining}>{t('BTN_TRAINING')}</button>
+                                
+                                <button style={{...styles.btn, background: '#444', width:'100%', marginBottom: 30, border: '1px solid #666'}} onClick={startTraining}>
+                                    {t('BTN_TRAINING')}
+                                </button>
                                 <div style={{display:'flex', gap: 40}}>
                                     <div style={styles.lobbyBox}>
                                         <h3 style={{color:'#fff'}}>{t('HOST_TITLE')}</h3>
@@ -265,6 +329,7 @@ export default function App() {
                             </div>
                         </div>
                     )}
+
                     {gameState === 'MENU' && (
                         <div style={styles.menuBox}>
                              <div style={{position:'absolute', top: 20, right: 20, background:'rgba(0,0,0,0.8)', padding:'10px', borderRadius:8, border:'1px solid #00ccff'}}>
@@ -272,9 +337,10 @@ export default function App() {
                             </div>
                             <div style={styles.menuContent}>
                                 <div style={styles.instructionsBox}><p style={{margin:0, color:'#00ccff', fontWeight:'bold'}}>{t('SELECT_INSTRUCT')}</p></div>
+                                
                                 <div style={styles.cardRow}>
                                     {Object.values(SHIP_STATS).map(ship => (
-                                        <div key={ship.id} className="ship-card" style={styles.card} onClick={() => { playClick(); if(mySquad.length < 3) setMySquad([...mySquad, ship.id]) }}>
+                                        <div key={ship.id} className="ship-card" style={styles.card} onClick={() => { if(mySquad.length < 3) setMySquad([...mySquad, ship.id]) }}>
                                             <img src={SHIP_IMAGES[ship.sprite]} alt={ship.name} style={styles.cardImage} />
                                             <strong style={{fontSize:'1rem', color:'#fff', display:'block'}}>{ship.name}</strong>
                                             <div style={styles.statLine}>HP: {ship.hp} | SPD: {ship.speed}</div>
@@ -282,9 +348,10 @@ export default function App() {
                                         </div>
                                     ))}
                                 </div>
+
                                 <div style={styles.slotsContainer}>
                                     {mySquad.map((id, idx) => (
-                                        <div key={idx} style={styles.slotActive} onClick={() => { playClick(); const ns = [...mySquad]; ns.splice(idx,1); setMySquad(ns); }}>{SHIP_STATS[id].name} ✖</div>
+                                        <div key={idx} style={styles.slotActive} onClick={() => { const ns = [...mySquad]; ns.splice(idx,1); setMySquad(ns); }}>{SHIP_STATS[id].name} ✖</div>
                                     ))}
                                 </div>
                                 <button disabled={mySquad.length !== 3} style={{...styles.startBtn, opacity: mySquad.length === 3 ? 1 : 0.5}} onClick={lockInSquad}>{t('BTN_READY')}</button>
@@ -292,28 +359,41 @@ export default function App() {
                             </div>
                         </div>
                     )}
+
                     {gameState === 'PLAYING' && (
                         <>
                             <div style={{position: 'absolute', top: 15, right: 15, zIndex: 1000}}>
                                 <button 
-                                    style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}} 
-                                    onClick={() => { 
-                                        if (window.confirm(t('SURRENDER_CONFIRM'))) { 
-                                            if (!isTraining) { 
-                                                const surrenderRef = ref(db, `rooms/${roomId}/surrender`); 
-                                                set(surrenderRef, isHost ? 'HOST' : 'GUEST'); 
-                                            } else { 
-                                                handleGameOver("DEFEAT"); 
-                                            } 
-                                        } 
+                                    style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
+                                    onClick={() => {
+                                        if (window.confirm(t('SURRENDER_CONFIRM'))) {
+                                            if (!isTraining) {
+                                                const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
+                                                set(surrenderRef, isHost ? 'HOST' : 'GUEST');
+                                            } else {
+                                                handleGameOver("DEFEAT");
+                                            }
+                                        }
                                     }}
                                 >
                                     {t('BTN_SURRENDER')}
                                 </button>
                             </div>
-                            <PhaserGame key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} />
+
+                            <PhaserGame 
+                                key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
+                                roomId={roomId} 
+                                isHost={isHost} 
+                                isTraining={isTraining}
+                                mySquadList={mySquad} 
+                                onGameOver={handleGameOver} 
+                                onExit={backToMenu} 
+                                lang={lang}
+                                t={t}
+                            />
                         </>
                     )}
+
                     {gameState === 'GAMEOVER' && (
                         <div style={styles.overlay}>
                             <h1 style={{...styles.title, color: getResultColor()}}>{t(gameResult)}</h1>
@@ -338,7 +418,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             type: Phaser.AUTO, width: TOTAL_WIDTH, height: TOTAL_HEIGHT,
             backgroundColor: '#000000', parent: 'phaser-container',
             disableVisibilityChange: true, 
-            physics: { default: 'arcade', arcade: { debug: false, gravity: { y: 0 }, fps: 60, fixedStep: true } },
+            physics: { 
+                default: 'arcade', 
+                arcade: { 
+                    debug: false, 
+                    gravity: { y: 0 },
+                    fps: 60, 
+                    fixedStep: true 
+                } 
+            },
             scale: { mode: Phaser.Scale.NONE },
             scene: { preload, create, update }
         };
@@ -346,43 +434,35 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const game = new Phaser.Game(config);
         gameRef.current = game;
 
-        let playerSquad = [], enemySquad = [];
-        let selectedShip = null, moveHandle = null, attackHandle = null;
-        let graphics, uiGroup, staticHudGroup, turnText, txtName, txtHP, txtSPD, txtDMG, timerText;
-        let isExecuting = false, isWaiting = false;
+        let playerSquad = [];
+        let enemySquad = [];
+        let selectedShip = null;
+        let moveHandle = null, attackHandle = null;
+        let graphics, uiGroup, staticHudGroup;
+        let turnText, txtName, txtHP, txtSPD, txtDMG, timerText;
+        let isExecuting = false;
+        let isWaiting = false;
         let shipsGroup, obstacleGroup, projectileGroup;
-        let unsubscribeTurns = null, unsubscribeSurrender = null;
-        let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
-        let soundBtn = null; let isMuted = false;
-
-        // 🔥 SONS (DECLARAÇÃO)
-        let sfxShoot, sfxExplosion, sfxClick, bgmMusic;
+        let obstaclesData = [];
+        let unsubscribeTurns = null;
+        let unsubscribeSurrender = null;
+        
+        let timeLeft = TURN_TIME_LIMIT;
+        let timerEvent = null;
 
         function preload() {
-            this.load.image('bg', 'assets/background.png'); this.load.image('flux_img', 'assets/Flux.png');
-            this.load.image('vector_img', 'assets/Vector.png'); this.load.image('colossus_img', 'assets/Colossus.png');
+            this.load.image('bg', 'assets/background.png');
+            this.load.image('flux_img', 'assets/Flux.png');
+            this.load.image('vector_img', 'assets/Vector.png');
+            this.load.image('colossus_img', 'assets/Colossus.png');
             this.load.image('asteroid_img', 'assets/Asteroid.png');
-
-            // 🎵 CARREGAR SONS
-            this.load.audio('bgm', 'assets/audio/bgm.mp3');
-            this.load.audio('shoot', 'assets/audio/shoot.mp3');
-            this.load.audio('explosion', 'assets/audio/explosion.mp3');
-            this.load.audio('click', 'assets/audio/click.mp3');
+            // 🔇 SONS REMOVIDOS TEMPORARIAMENTE
         }
 
         async function create() {
             const scene = this;
             scene.input.mouse.disableContextMenu();
             scene.add.tileSprite(TOTAL_WIDTH/2, PLAY_HEIGHT/2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
-
-            // 🎵 CONFIGURAR SONS
-            sfxShoot = scene.sound.add('shoot', { volume: 0.4 });
-            sfxExplosion = scene.sound.add('explosion', { volume: 0.5 });
-            sfxClick = scene.sound.add('click', { volume: 0.5 });
-            bgmMusic = scene.sound.add('bgm', { volume: 0.3, loop: true });
-            
-            if (!scene.sound.locked) bgmMusic.play();
-            else scene.sound.once(Phaser.Sound.Events.UNLOCKED, () => bgmMusic.play());
 
             const hudY = PLAY_HEIGHT;
             const hudBg = scene.add.graphics();
@@ -395,15 +475,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             txtHP = scene.add.text(textX, startY + 30 + lineHeight, "", { font: '14px monospace', fill: '#00ff00' }).setDepth(100);
             txtSPD = scene.add.text(textX, startY + 30 + (lineHeight*2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
             txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
-            timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
 
-            // 🎵 BOTÃO DE MUTE
-            soundBtn = scene.add.text(TOTAL_WIDTH - 80, 20, t('MUTE'), { font: '12px Arial', fill: '#888', backgroundColor: '#222', padding: 5 }).setInteractive().setDepth(1000);
-            soundBtn.on('pointerdown', () => {
-                isMuted = !isMuted; scene.sound.mute = isMuted;
-                soundBtn.setText(isMuted ? t('UNMUTE') : t('MUTE'));
-                soundBtn.setColor(isMuted ? '#ff0000' : '#888');
-            });
+            timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
             graphics = scene.add.graphics();
@@ -414,8 +487,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             projectileGroup = scene.physics.add.group();
 
             let mapData = [];
-            if (isTraining) mapData = generateMapData();
-            else {
+            if (isTraining) {
+                mapData = generateMapData();
+            } else {
                 try {
                     const roomSnap = await get(ref(db, `rooms/${roomId}`));
                     const roomData = roomSnap.val();
@@ -435,8 +509,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             });
 
             let mySquadData, enemySquadData;
-            if (isTraining) { mySquadData = mySquadList; enemySquadData = ['FLUX', 'VECTOR', 'COLOSSUS']; } 
-            else {
+            if (isTraining) {
+                mySquadData = mySquadList; 
+                enemySquadData = ['FLUX', 'VECTOR', 'COLOSSUS'];
+            } else {
                 const roomSnap = await get(ref(db, `rooms/${roomId}`));
                 const roomData = roomSnap.val();
                 mySquadData = isHost ? roomData.hostSquad : roomData.guestSquad;
@@ -460,14 +536,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                         if (!isExecuting) runTurnResolution(scene, turnData);
                     }
                 });
+
                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
                 unsubscribeSurrender = onValue(surrenderRef, (snapshot) => {
                     const whoSurrendered = snapshot.val();
                     if (whoSurrendered) {
-                        // ✅ CORREÇÃO TELA PRETA: NÃO DESTRUA O JOGO AQUI.
-                        // O React vai desmontar o componente e limpar tudo sozinho.
+                        // ✅ CORREÇÃO: Não destrói mais o jogo aqui. Deixa o React limpar.
                         const myRole = isHost ? 'HOST' : 'GUEST';
-                        if (whoSurrendered === myRole) onGameOver('DEFEAT'); else onGameOver('VICTORY');
+                        if (whoSurrendered === myRole) onGameOver('DEFEAT');
+                        else onGameOver('VICTORY');
                     }
                 });
             }
@@ -479,11 +556,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 scene.tweens.add({targets: boom, scale: 2, alpha: 0, duration: 150, onComplete:()=>boom.destroy()});
                 projectile.destroy();
             });
+
             scene.physics.add.collider(projectileGroup, obstacleGroup, (projectile, obs) => {
                 const boom = scene.add.circle(projectile.x, projectile.y, 10, 0xaaaaaa);
                 scene.tweens.add({targets: boom, scale: 1.5, alpha: 0, duration: 100, onComplete:()=>boom.destroy()});
                 projectile.destroy();
             });
+
             scene.physics.add.overlap(shipsGroup, shipsGroup, (a, b) => {
                 if (a === b) return;
                 if (!a.active || !b.active) return;
@@ -491,6 +570,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 if (!isExecuting) return;
                 if (a.hasCrashed || b.hasCrashed) return;
                 if (a.uniqueId > b.uniqueId) return; 
+
                 scene.cameras.main.shake(100, 0.01);
                 takeDamage(scene, a, 20); takeDamage(scene, b, 20);
                 a.hasCrashed = true; b.hasCrashed = true;
@@ -498,7 +578,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             });
 
             const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-            createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => { if(!isExecuting) { sfxClick.play(); submitTurn(scene); }}, staticHudGroup);
+            createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => {
+                if(!isExecuting) submitTurn(scene);
+            }, staticHudGroup);
 
             moveHandle = scene.add.circle(0, 0, 10, 0x00ff00).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
             attackHandle = scene.add.circle(0, 0, 10, 0xff0000).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
@@ -509,10 +591,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                     moveHandle.setPosition(clamped.x, clamped.y);
                     const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
                     const isBlocked = !checkRaycast(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
-                    if (dist <= selectedShip.stats.moveRange && !isBlocked) { selectedShip.plannedMove = { x: clamped.x, y: clamped.y }; moveHandle.setFillStyle(0x00ff00); } 
-                    else { moveHandle.setFillStyle(0x555555); }
+                    if (dist <= selectedShip.stats.moveRange && !isBlocked) {
+                        selectedShip.plannedMove = { x: clamped.x, y: clamped.y };
+                        moveHandle.setFillStyle(0x00ff00);
+                    } else {
+                        moveHandle.setFillStyle(0x555555);
+                    }
                 }
             });
+
             attackHandle.on('drag', (pointer, dragX, dragY) => {
                 if (selectedShip && !isExecuting && !isWaiting) {
                     const clamped = clampPoint(dragX, dragY);
@@ -525,47 +612,82 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             startTimer(scene);
         }
 
+        // 🔥 O RELÓGIO MUNDIAL (FIXED)
         function startTimer(scene) {
             if (timerEvent) timerEvent.remove();
+            
             const endTime = Date.now() + (TURN_TIME_LIMIT * 1000);
+            
             timeLeft = TURN_TIME_LIMIT;
-            timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`); timerText.setColor('#ffffff');
+            timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
+            timerText.setColor('#ffffff');
+
             timerEvent = scene.time.addEvent({
-                delay: 200,
+                delay: 200, 
                 callback: () => {
                     if (isExecuting || isWaiting) return;
+                    
                     const now = Date.now();
                     const secondsLeft = Math.ceil((endTime - now) / 1000);
+
                     if (secondsLeft !== timeLeft) {
                         timeLeft = secondsLeft;
                         if (timeLeft < 0) timeLeft = 0;
+
                         timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
                         if (timeLeft <= 10) timerText.setColor('#ff0000');
                         if (timeLeft <= 0) submitTurn(scene);
                     }
-                }, loop: true
+                },
+                loop: true
             });
         }
-        function stopTimer() { if (timerEvent) timerEvent.remove(); timerText.setText(t('WAITING_LABEL')); timerText.setColor('#ffff00'); }
+
+        function stopTimer() {
+            if (timerEvent) timerEvent.remove();
+            timerText.setText(t('WAITING_LABEL'));
+            timerText.setColor('#ffff00');
+        }
 
         function spawnShip(scene, x, y, stats, faction, index) {
             const ship = scene.physics.add.sprite(x, y, stats.sprite);
-            ship.setScale(0.17); if (faction === 'ENEMY') { ship.angle = 180; }
+            ship.setScale(0.17);
+            if (faction === 'ENEMY') { ship.angle = 180; }
             ship.setCollideWorldBounds(true);
-            const r = stats.hitRadius ?? 16; ship.body.setCircle(r);
-            const baseOffsetX = (ship.displayWidth / 2) - r; const baseOffsetY = (ship.displayHeight / 2) - r;
-            const manualX = stats.hitOffset?.x ?? 0; const manualY = stats.hitOffset?.y ?? 0;
+
+            const r = stats.hitRadius ?? 16;
+            ship.body.setCircle(r);
+            const baseOffsetX = (ship.displayWidth / 2) - r;
+            const baseOffsetY = (ship.displayHeight / 2) - r;
+            const manualX = stats.hitOffset?.x ?? 0;
+            const manualY = stats.hitOffset?.y ?? 0;
             ship.body.setOffset(baseOffsetX + manualX, baseOffsetY + manualY);
-            ship.stats = stats; ship.hp = stats.hp; ship.faction = faction; ship.squadIndex = index; 
-            ship.weapon = WEAPONS.CANNON; ship.hasCrashed = false; ship.uniqueId = faction + index; 
-            shipsGroup.add(ship); if (faction === 'PLAYER') playerSquad.push(ship); else enemySquad.push(ship);
+
+            ship.stats = stats;
+            ship.hp = stats.hp;
+            ship.faction = faction;
+            ship.squadIndex = index; 
+            ship.weapon = WEAPONS.CANNON;
+            ship.hasCrashed = false;
+            ship.uniqueId = faction + index; 
+
+            shipsGroup.add(ship);
+            if (faction === 'PLAYER') playerSquad.push(ship);
+            else enemySquad.push(ship);
             return ship;
         }
 
         async function submitTurn(scene) {
             if (isWaiting || isExecuting) return;
+
             stopTimer();
-            const myMoves = playerSquad.map(s => ({ index: s.squadIndex, move: s.plannedMove ? { x: s.plannedMove.x, y: s.plannedMove.y } : null, attack: s.plannedAttack ? { x: s.plannedAttack.x, y: s.plannedAttack.y, weapon: s.weapon.id } : null }));
+
+            const myMoves = playerSquad.map(s => ({
+                index: s.squadIndex,
+                move: s.plannedMove ? { x: s.plannedMove.x, y: s.plannedMove.y } : null,
+                attack: s.plannedAttack ? { x: s.plannedAttack.x, y: s.plannedAttack.y, weapon: s.weapon.id } : null
+            }));
+
             if (isTraining) {
                 const aiMoves = enemySquad.map(e => {
                     if (!e.active) return { index: e.squadIndex, move: null, attack: null };
@@ -580,17 +702,27 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                     }
                     return {index: e.squadIndex, move: mv, attack: atk};
                 });
+                
                 const turnData = { host: myMoves, guest: aiMoves }; 
                 runTurnResolution(scene, turnData);
                 return;
             }
-            isWaiting = true; turnText.setText(t('STATUS_WAITING')); uiGroup.setVisible(false); if (selectedShip) deselectAll();
-            const currentT = turnRefValue.current; const role = isHost ? 'host' : 'guest';
+
+            isWaiting = true;
+            turnText.setText(t('STATUS_WAITING'));
+            uiGroup.setVisible(false);
+            if (selectedShip) deselectAll();
+            
+            const currentT = turnRefValue.current;
+            const role = isHost ? 'host' : 'guest';
             await set(ref(db, `rooms/${roomId}/turns/${currentT}/${role}`), myMoves);
         }
 
         async function runTurnResolution(scene, turnData) {
-            isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
+            isExecuting = true;
+            isWaiting = true;
+            turnText.setText(t('EXECUTING_LABEL'));
+            stopTimer();
             
             if (!isTraining) {
                 const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
@@ -609,32 +741,67 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 }
             }
 
-            if (selectedShip) deselectAll(); uiGroup.setVisible(false);
+            if (selectedShip) deselectAll();
+            uiGroup.setVisible(false);
             [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
+
             const myData = isHost ? turnData.host : turnData.guest;
             const enemyData = isHost ? turnData.guest : turnData.host;
 
-            playerSquad.forEach(s => { const plan = myData.find(p => p.index === s.squadIndex); if (plan) { if (plan.move) s.plannedMove = plan.move; if (plan.attack) s.plannedAttack = plan.attack; } });
-            enemySquad.forEach(s => { const plan = enemyData.find(p => p.index === s.squadIndex); if (plan) { if (plan.move) s.plannedMove = plan.move; if (plan.attack) s.plannedAttack = plan.attack; } });
+            playerSquad.forEach(s => {
+                const plan = myData.find(p => p.index === s.squadIndex);
+                if (plan) {
+                    if (plan.move) s.plannedMove = plan.move;
+                    if (plan.attack) s.plannedAttack = plan.attack; 
+                }
+            });
+            enemySquad.forEach(s => {
+                const plan = enemyData.find(p => p.index === s.squadIndex);
+                if (plan) {
+                    if (plan.move) s.plannedMove = plan.move;
+                    if (plan.attack) s.plannedAttack = plan.attack; 
+                }
+            });
 
-            [...playerSquad, ...enemySquad].forEach(s => { const target = s.plannedMove || s.plannedAttack; if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y)); });
-            [...playerSquad, ...enemySquad].forEach(s => { if (!s.active) return; if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y); if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y); });
+            [...playerSquad, ...enemySquad].forEach(s => {
+                const target = s.plannedMove || s.plannedAttack;
+                if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y));
+            });
+
+            [...playerSquad, ...enemySquad].forEach(s => {
+                if (!s.active) return;
+                if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y);
+                if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
+            });
 
             await new Promise(r => setTimeout(r, 2500));
 
             if (isHost && !isTraining) {
                 const hpState = {};
-                [...playerSquad, ...enemySquad].forEach(ship => { hpState[`${ship.faction}_${ship.squadIndex}`] = ship.hp; });
+                [...playerSquad, ...enemySquad].forEach(ship => {
+                    hpState[`${ship.faction}_${ship.squadIndex}`] = ship.hp;
+                });
                 await update(ref(db, `rooms/${roomId}/gameState`), hpState);
             }
 
-            [...playerSquad, ...enemySquad].forEach(s => { s.plannedMove = null; s.plannedAttack = null; if(s.active) s.body.setVelocity(0,0); });
-            isExecuting = false; isWaiting = false; turnRefValue.current = turnRefValue.current + 1;
-            turnText.setText(t('TURN_YOURS')); uiGroup.setVisible(true); checkWinCondition(); startTimer(scene);
+            [...playerSquad, ...enemySquad].forEach(s => {
+                s.plannedMove = null; s.plannedAttack = null;
+                if(s.active) s.body.setVelocity(0,0);
+            });
+
+            isExecuting = false;
+            isWaiting = false;
+            turnRefValue.current = turnRefValue.current + 1;
+            
+            turnText.setText(t('TURN_YOURS'));
+            uiGroup.setVisible(true);
+            checkWinCondition();
+            startTimer(scene);
         }
 
         function checkWinCondition() {
-            const playerAlive = playerSquad.some(s => s.active); const enemyAlive = enemySquad.some(s => s.active);
+            const playerAlive = playerSquad.some(s => s.active);
+            const enemyAlive = enemySquad.some(s => s.active);
             if (!playerAlive && !enemyAlive) { gameRef.current.destroy(true); onGameOver('DRAW'); } 
             else if (!playerAlive) { gameRef.current.destroy(true); onGameOver('DEFEAT'); } 
             else if (!enemyAlive) { gameRef.current.destroy(true); onGameOver('VICTORY'); }
@@ -642,59 +809,101 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         function getHitboxCenter(ship) { return { x: ship.body.x + ship.body.halfWidth, y: ship.body.y + ship.body.halfHeight }; }
         function deselectAll() {
-            if (selectedShip) selectedShip.isSelected = false; selectedShip = null;
-            moveHandle.setVisible(false); attackHandle.setVisible(false); uiGroup.removeAll(true); updateHUDInfo();
+            if (selectedShip) selectedShip.isSelected = false;
+            selectedShip = null;
+            moveHandle.setVisible(false); 
+            attackHandle.setVisible(false);
+            uiGroup.removeAll(true); 
+            updateHUDInfo();
         }
         function updateHUDInfo() {
             if (selectedShip && selectedShip.active) {
                 txtName.setText(selectedShip.stats.name);
                 txtHP.setText(`HP : ${Math.floor(selectedShip.hp)}/${selectedShip.stats.hp}`);
                 txtSPD.setText(`SPD: ${selectedShip.stats.speed}`);
-                const currentDmg = selectedShip.weapon.damage; const dmgDisplay = selectedShip.weapon.type === 'SPREAD' ? `${currentDmg}x3` : currentDmg;
+                const currentDmg = selectedShip.weapon.damage;
+                const dmgDisplay = selectedShip.weapon.type === 'SPREAD' ? `${currentDmg}x3` : currentDmg;
                 txtDMG.setText(`DMG: ${dmgDisplay}`);
-            } else { txtName.setText(t('SELECT_SHIP')); txtHP.setText(""); txtSPD.setText(""); txtDMG.setText(""); }
+            } else {
+                txtName.setText(t('SELECT_SHIP'));
+                txtHP.setText(""); txtSPD.setText(""); txtDMG.setText("");
+            }
         }
         function clampPoint(x, y) { return { x: Phaser.Math.Clamp(x, 25, TOTAL_WIDTH - 25), y: Phaser.Math.Clamp(y, 25, PLAY_HEIGHT - 25) }; }
         
         function setupInputs(scene) {
             scene.input.on('pointerdown', (pointer) => {
-                if (isExecuting || isWaiting) return; if (pointer.y > PLAY_HEIGHT) return; 
+                if (isExecuting || isWaiting) return;
+                if (pointer.y > PLAY_HEIGHT) return; 
+
                 const draggedObjects = scene.input.hitTestPointer(pointer).filter(obj => obj === moveHandle || obj === attackHandle);
                 if (draggedObjects.length > 0) return;
+
                 let clickedShip = null;
-                playerSquad.forEach(s => { if (Phaser.Math.Distance.Between(pointer.x, pointer.y, s.x, s.y) < (s.displayWidth * 0.8)) { clickedShip = s; } });
+                playerSquad.forEach(s => {
+                    if (Phaser.Math.Distance.Between(pointer.x, pointer.y, s.x, s.y) < (s.displayWidth * 0.8)) {
+                        clickedShip = s;
+                    }
+                });
+
                 if (clickedShip) {
                     if (clickedShip === selectedShip) { deselectAll(); return; }
-                    if (selectedShip) selectedShip.isSelected = false; sfxClick.play();
-                    clickedShip.isSelected = true; selectedShip = clickedShip; updateHandles(); drawUI(scene); updateHUDInfo(); return;
+                    if (selectedShip) selectedShip.isSelected = false;
+                    clickedShip.isSelected = true;
+                    selectedShip = clickedShip;
+                    updateHandles();
+                    drawUI(scene);
+                    updateHUDInfo();
+                    return;
                 }
+
                 if (selectedShip && selectedShip.active) {
                     const target = clampPoint(pointer.x, pointer.y);
-                    if (pointer.rightButtonDown()) { sfxClick.play(); selectedShip.plannedAttack = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
-                    else if (pointer.leftButtonDown()) {
+                    if (pointer.rightButtonDown()) {
+                        selectedShip.plannedAttack = { x: target.x, y: target.y };
+                        updateHandles();
+                        drawUI(scene);
+                    } else if (pointer.leftButtonDown()) {
                         const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, target.x, target.y);
                         if (dist <= selectedShip.stats.moveRange) {
-                            if(checkRaycast(selectedShip.x, selectedShip.y, target.x, target.y)) { sfxClick.play(); selectedShip.plannedMove = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
-                            else { showFloatText(scene, target.x, target.y, t('BLOCKED_LABEL'), '#ff0000'); }
-                        } else { deselectAll(); }
+                            if(checkRaycast(selectedShip.x, selectedShip.y, target.x, target.y)) {
+                                selectedShip.plannedMove = { x: target.x, y: target.y };
+                                updateHandles();
+                                drawUI(scene); 
+                            } else {
+                                showFloatText(scene, target.x, target.y, t('BLOCKED_LABEL'), '#ff0000');
+                            }
+                        } else {
+                            deselectAll();
+                        }
                     }
-                } else { deselectAll(); }
+                } else {
+                    deselectAll();
+                }
             });
             scene.input.keyboard.on('keydown-SPACE', () => { if(!isExecuting) submitTurn(scene); });
             scene.input.keyboard.on('keydown-ESC', () => { game.destroy(true); onExit(); });
         }
 
         function fireWeapon(scene, shooter, tx, ty) {
-            sfxShoot.play();
-            const weapon = shooter.weapon; const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
+            const weapon = shooter.weapon;
+            const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
             const spawnBullet = (angleOffset) => {
-                const angle = baseAngle + angleOffset; const sx = shooter.x + Math.cos(angle) * 45; const sy = shooter.y + Math.sin(angle) * 45;
-                const proj = scene.add.circle(sx, sy, weapon.radius, weapon.color); scene.physics.add.existing(proj); projectileGroup.add(proj);
-                proj.owner = shooter; proj.damage = weapon.damage; proj.body.setCircle(weapon.radius + 8); proj.body.setOffset(-8, -8); 
-                const velocityX = Math.cos(angle) * weapon.speed; const velocityY = Math.sin(angle) * weapon.speed;
-                proj.body.setVelocity(velocityX, velocityY); scene.time.delayedCall(2000, () => { if(proj.active) proj.destroy(); });
+                const angle = baseAngle + angleOffset;
+                const sx = shooter.x + Math.cos(angle) * 45; 
+                const sy = shooter.y + Math.sin(angle) * 45;
+                const proj = scene.add.circle(sx, sy, weapon.radius, weapon.color);
+                scene.physics.add.existing(proj);
+                projectileGroup.add(proj);
+                proj.owner = shooter; proj.damage = weapon.damage;
+                proj.body.setCircle(weapon.radius + 8); proj.body.setOffset(-8, -8); 
+                const velocityX = Math.cos(angle) * weapon.speed;
+                const velocityY = Math.sin(angle) * weapon.speed;
+                proj.body.setVelocity(velocityX, velocityY);
+                scene.time.delayedCall(2000, () => { if(proj.active) proj.destroy(); });
             };
-            if (weapon.type === 'SINGLE') spawnBullet(0); else if (weapon.type === 'SPREAD') { spawnBullet(0); spawnBullet(-0.2); spawnBullet(0.2); }
+            if (weapon.type === 'SINGLE') spawnBullet(0);
+            else if (weapon.type === 'SPREAD') { spawnBullet(0); spawnBullet(-0.2); spawnBullet(0.2); }
         }
 
         function moveShip(scene, ship, tx, ty) {
@@ -704,17 +913,27 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         function takeDamage(scene, ship, dmg) {
-            ship.hp -= dmg; showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
+            ship.hp -= dmg;
+            showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
             if (ship.hp <= 0) {
-                sfxExplosion.play();
-                const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff); scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
-                ship.body.enable = false; ship.setActive(false).setVisible(false); if (selectedShip === ship) deselectAll();
-            } else { ship.setTint(0xff0000); scene.time.delayedCall(100, () => { if (ship.active) ship.clearTint(); }); }
+                const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
+                scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
+                ship.body.enable = false;
+                ship.setActive(false).setVisible(false);
+                if (selectedShip === ship) deselectAll();
+            } else {
+                ship.setTint(0xff0000);
+                scene.time.delayedCall(100, () => { if (ship.active) ship.clearTint(); });
+            }
         }
 
         function checkRaycast(x1, y1, x2, y2) {
             const line = new Phaser.Geom.Line(x1, y1, x2, y2);
-            for (let obj of obstacleGroup.getChildren()) { const rect = obj.getBounds(); if (Phaser.Geom.Intersects.LineToRectangle(line, rect)) return false; } return true; 
+            for (let obj of obstacleGroup.getChildren()) {
+                const rect = obj.getBounds();
+                if (Phaser.Geom.Intersects.LineToRectangle(line, rect)) return false; 
+            }
+            return true; 
         }
 
         function showFloatText(scene, x, y, text, color) { const txt = scene.add.text(x, y, text, {font:'20px monospace', fill: color, stroke:'#000', strokeThickness:3}).setOrigin(0.5).setDepth(200); scene.tweens.add({targets:txt, y:y-50, alpha:0, duration:1000, onComplete:()=>txt.destroy()}); }
@@ -726,18 +945,39 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         function drawUI(scene) {
-            uiGroup.removeAll(true); if (!selectedShip) return; const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-            createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); }, uiGroup); 
-            createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); }, uiGroup);
+            uiGroup.removeAll(true);
+            if (!selectedShip) return;
+            const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
+
+            createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, 
+                selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333,
+                () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); }, uiGroup); 
+
+            createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, 
+                selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333,
+                () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); }, uiGroup);
+
             let cancelX = 250;
-            if (selectedShip.plannedMove) { createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000, () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); }, uiGroup); cancelX += 110; }
-            if (selectedShip.plannedAttack) { createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000, () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); }, uiGroup); }
+            if (selectedShip.plannedMove) {
+                createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000, () => {
+                    selectedShip.plannedMove = null; updateHandles(); drawUI(scene);
+                }, uiGroup);
+                cancelX += 110;
+            }
+            if (selectedShip.plannedAttack) {
+                createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000, () => {
+                    selectedShip.plannedAttack = null; updateHandles(); drawUI(scene);
+                }, uiGroup);
+            }
         }
 
         function createButton(scene, x, y, text, w, h, color, callback, targetGroup) {
-            const container = scene.add.container(x, y); const bg = scene.add.rectangle(0, 0, w, h, color).setInteractive({ useHandCursor: true }).on('pointerdown', callback);
+            const container = scene.add.container(x, y);
+            const bg = scene.add.rectangle(0, 0, w, h, color).setInteractive({ useHandCursor: true }).on('pointerdown', callback);
             const label = scene.add.text(0, 0, text, { fontSize: '13px', fontStyle: 'bold', fontFamily:'Arial', align:'center' }).setOrigin(0.5);
-            container.add([bg, label]); if (targetGroup) targetGroup.add(container); return container;
+            container.add([bg, label]);
+            if (targetGroup) targetGroup.add(container);
+            return container;
         }
 
         function updateHandles() {
@@ -750,21 +990,27 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             graphics.clear();
             if (isExecuting) {
                 moveHandle.setVisible(false); attackHandle.setVisible(false);
-                [...playerSquad, ...enemySquad].forEach(ship => { if(ship.active) drawHP(ship); }); return;
+                [...playerSquad, ...enemySquad].forEach(ship => { if(ship.active) drawHP(ship); });
+                return;
             }
             [...playerSquad].forEach(ship => {
-                if (!ship.active) return; drawHP(ship);
+                if (!ship.active) return;
+                drawHP(ship);
                 if (ship.plannedMove) { graphics.lineStyle(2, 0x00ff00, 0.8); graphics.lineBetween(ship.x, ship.y, ship.plannedMove.x, ship.plannedMove.y); }
                 if (ship.plannedAttack) {
                     graphics.lineStyle(2, 0xff0000, 0.8); graphics.lineBetween(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
                     if (ship.weapon.type === 'SPREAD') {
-                        const angle = Phaser.Math.Angle.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y); const dist = Phaser.Math.Distance.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
-                        const p1 = { x: ship.x + Math.cos(angle - 0.2) * dist, y: ship.y + Math.sin(angle - 0.2) * dist }; const p2 = { x: ship.x + Math.cos(angle + 0.2) * dist, y: ship.y + Math.sin(angle + 0.2) * dist };
+                        const angle = Phaser.Math.Angle.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
+                        const dist = Phaser.Math.Distance.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
+                        const p1 = { x: ship.x + Math.cos(angle - 0.2) * dist, y: ship.y + Math.sin(angle - 0.2) * dist };
+                        const p2 = { x: ship.x + Math.cos(angle + 0.2) * dist, y: ship.y + Math.sin(angle + 0.2) * dist };
                         graphics.lineStyle(1, 0xff0000, 0.3); graphics.lineBetween(ship.x, ship.y, p1.x, p1.y); graphics.lineBetween(ship.x, ship.y, p2.x, p2.y);
                     }
                 }
                 if (ship.isSelected) {
-                    const c = getHitboxCenter(ship); graphics.lineStyle(2, 0x00ff00); graphics.strokeCircle(c.x, c.y, ship.body.radius); graphics.lineStyle(1, 0x00ff00, 0.15); graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
+                    const c = getHitboxCenter(ship);
+                    graphics.lineStyle(2, 0x00ff00); graphics.strokeCircle(c.x, c.y, ship.body.radius);
+                    graphics.lineStyle(1, 0x00ff00, 0.15); graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
                 }
             });
             [...enemySquad].forEach(ship => { if(ship.active) drawHP(ship); });
@@ -773,12 +1019,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
             if(unsubscribeSurrender) unsubscribeSurrender();
-            // ✅ CORREÇÃO DO AUDIO ERROR: Limpar sons antes de destruir
+            // ✅ LIMPEZA SEGURA DO PHASER (SEM ÁUDIO)
             if(gameRef.current) {
-                try {
-                    const scenes = gameRef.current.scene.getScenes(true);
-                    if(scenes) { scenes.forEach(scene => { if(scene.sound) { scene.sound.stopAll(); scene.sound.removeAll(); }}); }
-                } catch(e) { console.log("Audio cleanup safe", e); }
                 gameRef.current.destroy(true); 
                 gameRef.current = null;
             }
