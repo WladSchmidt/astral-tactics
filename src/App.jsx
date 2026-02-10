@@ -54,9 +54,7 @@ const TEXTS = {
         BTN_MENU: "MENU PRINCIPAL",
         DESC_FLUX: "Alta velocidade, baixa vida.",
         DESC_VECTOR: "Status balanceados.",
-        DESC_COLOSSUS: "Tanque pesado, muito lento.",
-        MUTE: "MUTE",
-        UNMUTE: "SOM ON"
+        DESC_COLOSSUS: "Tanque pesado, muito lento."
     },
     EN: {
         MAIN_TITLE: "PREPARE FOR BATTLE",
@@ -97,9 +95,7 @@ const TEXTS = {
         BTN_MENU: "MAIN MENU",
         DESC_FLUX: "High speed, low HP.",
         DESC_VECTOR: "Balanced stats.",
-        DESC_COLOSSUS: "Heavy tank, very slow.",
-        MUTE: "MUTE",
-        UNMUTE: "SOUND ON"
+        DESC_COLOSSUS: "Heavy tank, very slow."
     }
 };
 
@@ -134,16 +130,16 @@ export default function App() {
     const [statusMsg, setStatusMsg] = useState('');
     const [isHost, setIsHost] = useState(false);
     const [isTraining, setIsTraining] = useState(false);
+    
+    // ✅ NOVO: Estado Global de Som (Persiste entre telas)
+    const [isMuted, setIsMuted] = useState(false);
 
     const t = (key) => TEXTS[lang][key] || key;
 
-    // ✅ (SURRENDER) evita rodar 2x em realtime
     const surrenderHandledRef = useRef(false);
 
-    // --- SONS (PLACEHOLDER) ---
-    const playClick = () => { /* Audio */ };
+    const playClick = () => { /* Audio placeholder */ };
 
-    // --- LOBBY LOGIC ---
     const startTraining = () => { playClick(); setIsTraining(true); setIsHost(true); setRoomId('OFFLINE'); setGameState('MENU'); setStatusMsg(t('STATUS_P2_CONNECTED')); };
 
     const createRoom = async () => {
@@ -154,20 +150,16 @@ export default function App() {
             const mapData = generateMapData();
             await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData });
             setStatusMsg(t('STATUS_CREATED').replace('{0}', code));
+            
             const roomRef = ref(db, `rooms/${code}`);
-const unsubscribe = onValue(roomRef, (snapshot) => {
-  const data = snapshot.val();
-  if (data && data.guest) {
-    setStatusMsg(t('STATUS_P2_CONNECTED'));
-
-    // ✅ Só muda pra MENU se ainda estiver no LOBBY
-    setGameState((prev) => (prev === 'LOBBY' ? 'MENU' : prev));
-
-    // ✅ Para de escutar depois que conectou (evita atropelar GAMEOVER)
-    unsubscribe();
-  }
-});
-
+            const unsubscribe = onValue(roomRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data && data.guest) {
+                    setStatusMsg(t('STATUS_P2_CONNECTED'));
+                    setGameState((prev) => (prev === 'LOBBY' ? 'MENU' : prev));
+                    unsubscribe();
+                }
+            });
         } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
     };
 
@@ -181,7 +173,6 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
         } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
     };
 
-    // ✅ FIX: listener temporário (não fica empurrando o jogador pra PLAYING depois do GAMEOVER)
     const lockInSquad = async () => {
         playClick();
         if (mySquad.length !== 3) return;
@@ -204,7 +195,7 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
             setGameState((prev) => {
                 const canStart = prev === 'MENU' || prev === 'LOBBY';
                 if (canStart && data.hostSquad && data.guestSquad) {
-                    unsubscribe(); // ✅ remove assim que iniciar
+                    unsubscribe(); 
                     return 'PLAYING';
                 }
                 return prev;
@@ -214,7 +205,6 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
 
     const handleGameOver = (result) => { setGameResult(result); setGameState('GAMEOVER'); };
 
-    // ✅ FIX: reiniciar limpa o surrender (pra não re-aplicar GAMEOVER)
     const restartGame = async () => {
         playClick();
         setRunId(prev => prev + 1);
@@ -233,7 +223,6 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
     const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
     const getResultColor = () => { if (gameResult === 'VICTORY') return '#00ff00'; if (gameResult === 'DRAW') return '#ffff00'; return '#ff0000'; };
 
-    // ✅ FIX: Listener supremo de surrender (decide VITÓRIA/DERROTA para ambos)
     useEffect(() => {
         if (!roomId || isTraining) return;
 
@@ -252,7 +241,7 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
         });
 
         return () => unsubscribe();
-    }, [roomId, isTraining, isHost]);
+    }, [roomId, isTraining, isHost, runId]);
 
     return (
         <>
@@ -264,10 +253,37 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
             `}</style>
             <div style={styles.backgroundWrapper}>
                 <div style={styles.gameContainer}>
+                    {/* 🌍 LANGUAGE TOGGLE */}
                     <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
                         <button onClick={()=>setLang('PT')} style={{ color: lang==='PT'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>PT</button>
                         <div style={{width:1, background:'#555'}}></div>
                         <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
+                    </div>
+
+                    {/* 🔊 GLOBAL MUTE BUTTON (Canto Inferior Direito) */}
+                    <div 
+                        onClick={() => setIsMuted(!isMuted)}
+                        style={{
+                            position: 'absolute', 
+                            bottom: 20, 
+                            right: 20, 
+                            zIndex: 9999,
+                            cursor: 'pointer',
+                            fontSize: '24px',
+                            background: 'rgba(0,0,0,0.6)',
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid #444',
+                            boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+                            userSelect: 'none'
+                        }}
+                        title={isMuted ? "Unmute" : "Mute"}
+                    >
+                        {isMuted ? '🔇' : '🔊'}
                     </div>
 
                     {gameState === 'LOBBY' && (
@@ -331,7 +347,6 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
                                             return;
                                         }
 
-                                        // ✅ FIX: Apenas escreve no Firebase. O listener supremo decide vitória/derrota pros 2.
                                         try {
                                             await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST');
                                         } catch (err) {
@@ -343,7 +358,19 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
                                     {t('BTN_SURRENDER')}
                                 </button>
                             </div>
-                            <PhaserGame key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} />
+                            {/* 🔥 Passa o estado global de som para o Phaser */}
+                            <PhaserGame 
+                                key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
+                                roomId={roomId} 
+                                isHost={isHost} 
+                                isTraining={isTraining} 
+                                mySquadList={mySquad} 
+                                onGameOver={handleGameOver} 
+                                onExit={backToMenu} 
+                                lang={lang} 
+                                t={t} 
+                                isGlobalMuted={isMuted} // NOVO PROP
+                            />
                         </>
                     )}
                     {gameState === 'GAMEOVER' && (
@@ -362,9 +389,16 @@ const unsubscribe = onValue(roomRef, (snapshot) => {
 }
 
 // --- PHASER GAME COMPONENT ---
-const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t }) => {
+const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t, isGlobalMuted }) => {
     const gameRef = useRef(null);
     const turnRefValue = useRef(1);
+
+    // ✅ Sincroniza o som do Phaser com o botão React
+    useEffect(() => {
+        if (gameRef.current) {
+            gameRef.current.sound.mute = isGlobalMuted;
+        }
+    }, [isGlobalMuted]);
 
     useEffect(() => {
         const config = {
@@ -378,6 +412,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         const game = new Phaser.Game(config);
         gameRef.current = game;
+        
+        // Aplica o mute inicial
+        game.sound.mute = isGlobalMuted;
 
         let playerSquad = [], enemySquad = [];
         let selectedShip = null, moveHandle = null, attackHandle = null;
@@ -386,7 +423,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         let shipsGroup, obstacleGroup, projectileGroup;
         let unsubscribeTurns = null;
 
-        // ✅ FIX (SURRENDER): parar o jogo internamente quando alguém desistir
         let matchEnded = false;
         let unsubscribeSurrender = null;
 
@@ -396,12 +432,21 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             this.load.image('bg', 'assets/background.png'); this.load.image('flux_img', 'assets/Flux.png');
             this.load.image('vector_img', 'assets/Vector.png'); this.load.image('colossus_img', 'assets/Colossus.png');
             this.load.image('asteroid_img', 'assets/Asteroid.png');
+            // SONS (Placeholder - descomente quando adicionar os arquivos)
+            // this.load.audio('bgm', 'assets/audio/bgm.mp3');
+            // this.load.audio('shoot', 'assets/audio/shoot.mp3');
+            // ...
         }
 
         async function create() {
             const scene = this;
             scene.input.mouse.disableContextMenu();
             scene.add.tileSprite(TOTAL_WIDTH/2, PLAY_HEIGHT/2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
+
+            // try {
+            //     const bgm = scene.sound.add('bgm', { volume: 0.3, loop: true });
+            //     bgm.play();
+            // } catch(e) {}
 
             const hudY = PLAY_HEIGHT;
             const hudBg = scene.add.graphics();
@@ -416,91 +461,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
             timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
 
-            // MUTE BTN
-            // 🔊 VOLUME UI (HUD - abaixo do EXECUTAR)
-const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-
-// Posição: abaixo do botão EXECUTAR (que fica em x = TOTAL_WIDTH - 120, y = centerY)
-const volX = TOTAL_WIDTH - 120;
-const volIconY = centerY + 32;
-const volSliderY = centerY + 52;
-
-let isMuted = false;
-let currentVolume = scene.sound.volume ?? 1;
-
-// Ícone 🔊 / 🔇
-const volIcon = scene.add.text(volX - 70, volIconY, '🔊', {
-  font: '18px Arial',
-  fill: '#ffffff',
-  backgroundColor: '#222',
-  padding: 6
-})
-.setOrigin(0.5)
-.setInteractive({ useHandCursor: true })
-.setDepth(1000);
-
-volIcon.on('pointerdown', () => {
-  isMuted = !isMuted;
-  scene.sound.mute = isMuted;
-  volIcon.setText(isMuted ? '🔇' : '🔊');
-});
-
-// Slider (barra)
-const sliderW = 110;
-const sliderH = 6;
-
-const sliderBg = scene.add.rectangle(volX + 10, volSliderY, sliderW, sliderH, 0x333333)
-  .setOrigin(0.5)
-  .setDepth(1000);
-
-// “Preenchimento” do volume (da esquerda para a direita)
-const sliderFill = scene.add.rectangle(
-  (volX + 10) - (sliderW / 2) + (sliderW * currentVolume / 2),
-  volSliderY,
-  sliderW * currentVolume,
-  sliderH,
-  0x00ccff
-)
-.setOrigin(0.5)
-.setDepth(1001);
-
-// Handle (bolinha)
-const handle = scene.add.circle(
-  (volX + 10) - (sliderW / 2) + (sliderW * currentVolume),
-  volSliderY,
-  8,
-  0xffffff
-)
-.setStrokeStyle(2, 0x000000)
-.setDepth(1002)
-.setInteractive({ useHandCursor: true, draggable: true });
-
-handle.on('drag', (pointer, dragX) => {
-  // clamp do handle dentro do slider
-  const left = (volX + 10) - (sliderW / 2);
-  const right = (volX + 10) + (sliderW / 2);
-  const x = Phaser.Math.Clamp(dragX, left, right);
-
-  handle.x = x;
-
-  // volume (0..1)
-  const v = (x - left) / sliderW;
-  currentVolume = v;
-
-  // Se mexeu no slider, faz sentido “desmutar”
-  if (isMuted && v > 0) {
-    isMuted = false;
-    scene.sound.mute = false;
-    volIcon.setText('🔊');
-  }
-
-  scene.sound.volume = currentVolume;
-
-  // atualiza fill
-  sliderFill.width = sliderW * currentVolume;
-  sliderFill.x = left + (sliderFill.width / 2);
-});
-
+            // ❌ REMOVIDO BOTÃO DE SOM INTERNO ANTIGO
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
             graphics = scene.add.graphics();
@@ -555,7 +516,6 @@ handle.on('drag', (pointer, dragX) => {
                     if (turnData && turnData.host && turnData.guest) { if (!isExecuting) runTurnResolution(scene, turnData); }
                 });
 
-                // ✅ FIX: Listener local para "congelar" a partida no Phaser quando surrender acontecer
                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
                 unsubscribeSurrender = onValue(surrenderRef, (snap) => {
                     const who = snap.val();
@@ -661,7 +621,6 @@ handle.on('drag', (pointer, dragX) => {
             if (isWaiting || isExecuting) return;
             stopTimer();
 
-            // 🔥 V34: SEGURANÇA EXTRA - Não deixa enviar turno se já tiver desistência
             if (!isTraining) {
                 const sSnap = await get(ref(db, `rooms/${roomId}/surrender`));
                 if (sSnap.exists() && sSnap.val()) return; // Jogo já acabou
