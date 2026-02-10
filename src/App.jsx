@@ -154,9 +154,20 @@ export default function App() {
             const mapData = generateMapData();
             await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData });
             setStatusMsg(t('STATUS_CREATED').replace('{0}', code));
-            onValue(ref(db, `rooms/${code}`), (snapshot) => {
-                const data = snapshot.val(); if (data && data.guest) { setStatusMsg(t('STATUS_P2_CONNECTED')); setGameState('MENU'); }
-            });
+            const roomRef = ref(db, `rooms/${code}`);
+const unsubscribe = onValue(roomRef, (snapshot) => {
+  const data = snapshot.val();
+  if (data && data.guest) {
+    setStatusMsg(t('STATUS_P2_CONNECTED'));
+
+    // ✅ Só muda pra MENU se ainda estiver no LOBBY
+    setGameState((prev) => (prev === 'LOBBY' ? 'MENU' : prev));
+
+    // ✅ Para de escutar depois que conectou (evita atropelar GAMEOVER)
+    unsubscribe();
+  }
+});
+
         } catch (e) { setStatusMsg(t('STATUS_ERROR') + e.message); }
     };
 
