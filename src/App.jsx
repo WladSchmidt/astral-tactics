@@ -265,8 +265,8 @@ export default function App() {
                         onClick={() => setIsMuted(!isMuted)}
                         style={{
                             position: 'absolute', 
-                            bottom: 25, 
-                            right: 25, 
+                            bottom: 10, 
+                            right: 10, 
                             zIndex: 9999,
                             cursor: 'pointer',
                             fontSize: '24px',
