@@ -13,6 +13,13 @@ const HUD_HEIGHT = 140;
 const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
 const TURN_TIME_LIMIT = 25;
 
+// --- LISTA DE MÚSICAS ---
+const MUSIC_TRACKS = [
+    'assets/audio/music_1.mp3',
+    'assets/audio/music_2.mp3',
+    'assets/audio/music_3.mp3'
+];
+
 // --- SISTEMA DE TRADUÇÃO ---
 const TEXTS = {
     PT: {
@@ -131,15 +138,50 @@ export default function App() {
     const [isHost, setIsHost] = useState(false);
     const [isTraining, setIsTraining] = useState(false);
     
-    // ✅ NOVO: Estado Global de Som (Persiste entre telas)
-    const [isMuted, setIsMuted] = useState(false);
+    // --- ÁUDIO GLOBAL ---
+    const [isGlobalMuted, setIsGlobalMuted] = useState(false); // Master Mute (Música + SFX)
+    const [isMusicPlaying, setIsMusicPlaying] = useState(true); // Só Música (Play/Pause)
+    const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+    const audioRef = useRef(null); // Referência ao elemento <audio>
 
     const t = (key) => TEXTS[lang][key] || key;
-
     const surrenderHandledRef = useRef(false);
 
-    const playClick = () => { /* Audio placeholder */ };
+    // --- PLAYER DE MÚSICA LOGIC ---
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = 0.3; // Volume da música um pouco mais baixo
+            if (isGlobalMuted) {
+                audioRef.current.pause();
+            } else if (isMusicPlaying) {
+                audioRef.current.play().catch(e => console.log("Autoplay bloqueado:", e));
+            } else {
+                audioRef.current.pause();
+            }
+        }
+    }, [isGlobalMuted, isMusicPlaying, currentTrackIndex]);
 
+    const handleNextTrack = () => {
+        setCurrentTrackIndex((prev) => (prev + 1) % MUSIC_TRACKS.length);
+    };
+
+    const handlePrevTrack = () => {
+        setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length);
+    };
+
+    const handleMusicEnded = () => {
+        handleNextTrack(); // Loop infinito automático
+    };
+
+    // Função segura para tocar SFX de clique na UI (React)
+    const playClick = () => { 
+        if(isGlobalMuted) return;
+        const audio = new Audio('assets/audio/click.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(()=>{});
+    };
+
+    // --- GAME LOGIC ---
     const startTraining = () => { playClick(); setIsTraining(true); setIsHost(true); setRoomId('OFFLINE'); setGameState('MENU'); setStatusMsg(t('STATUS_P2_CONNECTED')); };
 
     const createRoom = async () => {
@@ -176,22 +218,14 @@ export default function App() {
     const lockInSquad = async () => {
         playClick();
         if (mySquad.length !== 3) return;
-
-        if (isTraining) {
-            setGameState('PLAYING');
-            return;
-        }
-
+        if (isTraining) { setGameState('PLAYING'); return; }
         const role = isHost ? 'hostSquad' : 'guestSquad';
         await update(ref(db, `rooms/${roomId}`), { [role]: mySquad });
-
         setStatusMsg(t('STATUS_WAITING'));
-
         const roomRef = ref(db, `rooms/${roomId}`);
         const unsubscribe = onValue(roomRef, (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
-
             setGameState((prev) => {
                 const canStart = prev === 'MENU' || prev === 'LOBBY';
                 if (canStart && data.hostSquad && data.guestSquad) {
@@ -206,17 +240,10 @@ export default function App() {
     const handleGameOver = (result) => { setGameResult(result); setGameState('GAMEOVER'); };
 
     const restartGame = async () => {
-        playClick();
-        setRunId(prev => prev + 1);
-
+        playClick(); setRunId(prev => prev + 1);
         if (!isTraining && roomId) {
-            try {
-                await set(ref(db, `rooms/${roomId}/surrender`), null);
-            } catch (e) {
-                console.error("Falha ao limpar surrender:", e);
-            }
+            try { await set(ref(db, `rooms/${roomId}/surrender`), null); } catch (e) { console.error(e); }
         }
-
         setGameState('PLAYING');
     };
 
@@ -225,21 +252,16 @@ export default function App() {
 
     useEffect(() => {
         if (!roomId || isTraining) return;
-
         surrenderHandledRef.current = false;
-
         const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
         const unsubscribe = onValue(surrenderRef, (snapshot) => {
             const whoSurrendered = snapshot.val();
             if (!whoSurrendered) return;
-
             if (surrenderHandledRef.current) return;
             surrenderHandledRef.current = true;
-
             const myRole = isHost ? 'HOST' : 'GUEST';
             handleGameOver(whoSurrendered === myRole ? 'DEFEAT' : 'VICTORY');
         });
-
         return () => unsubscribe();
     }, [roomId, isTraining, isHost, runId]);
 
@@ -250,7 +272,18 @@ export default function App() {
                 * { box-sizing: border-box; user-select: none; }
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
+                .music-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #fff; padding: 0 5px; opacity: 0.7; transition: 0.2s; }
+                .music-btn:hover { opacity: 1; transform: scale(1.1); }
             `}</style>
+
+            {/* 🎵 ELEMENTO DE ÁUDIO INVISÍVEL (Persiste entre as telas) */}
+            <audio 
+                ref={audioRef} 
+                src={MUSIC_TRACKS[currentTrackIndex]} 
+                onEnded={handleMusicEnded}
+                autoPlay 
+            />
+
             <div style={styles.backgroundWrapper}>
                 <div style={styles.gameContainer}>
                     {/* 🌍 LANGUAGE TOGGLE */}
@@ -260,30 +293,33 @@ export default function App() {
                         <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
                     </div>
 
-                    {/* 🔊 GLOBAL MUTE BUTTON (Canto Inferior Direito) */}
-                    <div 
-                        onClick={() => setIsMuted(!isMuted)}
-                        style={{
-                            position: 'absolute', 
-                            bottom: 1, 
-                            right: 1, 
-                            zIndex: 9999,
-                            cursor: 'pointer',
-                            fontSize: '24px',
-                            background: 'rgba(0,0,0,0.6)',
-                            width: 40,
-                            height: 40,
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            border: '1px solid #444',
-                            boxShadow: '0 0 10px rgba(0,0,0,0.5)',
-                            userSelect: 'none'
-                        }}
-                        title={isMuted ? "Unmute" : "Mute"}
-                    >
-                        {isMuted ? '🔇' : '🔊'}
+                    {/* 🎧 DOCK MULTIMÍDIA (PLAYER + MASTER MUTE) */}
+                    <div style={{
+                        position: 'absolute', bottom: 20, right: 20, zIndex: 9999,
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        background: 'rgba(0,0,0,0.8)', padding: '8px 15px', borderRadius: '30px',
+                        border: '1px solid #444', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                    }}>
+                        {/* Controles de Música (Só aparecem se não estiver Mute Geral) */}
+                        {!isGlobalMuted && (
+                            <>
+                                <button className="music-btn" onClick={handlePrevTrack} title="Anterior">⏮️</button>
+                                <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
+                                    {isMusicPlaying ? '⏸️' : '▶️'}
+                                </button>
+                                <button className="music-btn" onClick={handleNextTrack} title="Próxima">⏭️</button>
+                                <div style={{width:1, height:20, background:'#555', margin:'0 5px'}}></div>
+                            </>
+                        )}
+                        {/* Master Mute */}
+                        <button 
+                            className="music-btn" 
+                            onClick={() => setIsGlobalMuted(!isGlobalMuted)} 
+                            title="Master Mute (Jogo todo)"
+                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00'}}
+                        >
+                            {isGlobalMuted ? '🔇' : '🔊'}
+                        </button>
                     </div>
 
                     {gameState === 'LOBBY' && (
@@ -341,35 +377,19 @@ export default function App() {
                                     style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
                                     onClick={async () => {
                                         if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
-
-                                        if (isTraining) {
-                                            handleGameOver("DEFEAT");
-                                            return;
-                                        }
-
-                                        try {
-                                            await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST');
-                                        } catch (err) {
-                                            console.error("ERRO FIREBASE:", err);
-                                            alert("Erro de conexão: " + (err.message || "Tente novamente."));
-                                        }
+                                        if (isTraining) { handleGameOver("DEFEAT"); return; }
+                                        try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); } 
+                                        catch (err) { alert("Erro: " + err.message); }
                                     }}
                                 >
                                     {t('BTN_SURRENDER')}
                                 </button>
                             </div>
-                            {/* 🔥 Passa o estado global de som para o Phaser */}
                             <PhaserGame 
                                 key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
-                                roomId={roomId} 
-                                isHost={isHost} 
-                                isTraining={isTraining} 
-                                mySquadList={mySquad} 
-                                onGameOver={handleGameOver} 
-                                onExit={backToMenu} 
-                                lang={lang} 
-                                t={t} 
-                                isGlobalMuted={isMuted} // NOVO PROP
+                                roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} 
+                                onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} 
+                                isGlobalMuted={isGlobalMuted} // Passa o Mute para o Phaser
                             />
                         </>
                     )}
@@ -393,9 +413,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     const gameRef = useRef(null);
     const turnRefValue = useRef(1);
 
-    // ✅ Sincroniza o som do Phaser com o botão React
+    // 🔥 Sincroniza SFX com o Master Mute
     useEffect(() => {
-        if (gameRef.current) {
+        if(gameRef.current) {
             gameRef.current.sound.mute = isGlobalMuted;
         }
     }, [isGlobalMuted]);
@@ -412,9 +432,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         const game = new Phaser.Game(config);
         gameRef.current = game;
-        
-        // Aplica o mute inicial
-        game.sound.mute = isGlobalMuted;
+        game.sound.mute = isGlobalMuted; // Inicializa já mutado se necessário
 
         let playerSquad = [], enemySquad = [];
         let selectedShip = null, moveHandle = null, attackHandle = null;
@@ -422,20 +440,23 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         let isExecuting = false, isWaiting = false;
         let shipsGroup, obstacleGroup, projectileGroup;
         let unsubscribeTurns = null;
-
         let matchEnded = false;
         let unsubscribeSurrender = null;
-
         let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
+        
+        // SFX Variaveis
+        let sfxShoot, sfxExplosion, sfxClick, sfxCrash;
 
         function preload() {
             this.load.image('bg', 'assets/background.png'); this.load.image('flux_img', 'assets/Flux.png');
             this.load.image('vector_img', 'assets/Vector.png'); this.load.image('colossus_img', 'assets/Colossus.png');
             this.load.image('asteroid_img', 'assets/Asteroid.png');
-            // SONS (Placeholder - descomente quando adicionar os arquivos)
-            // this.load.audio('bgm', 'assets/audio/bgm.mp3');
-            // this.load.audio('shoot', 'assets/audio/shoot.mp3');
-            // ...
+            
+            // 🔊 CARREGANDO SFX
+            this.load.audio('shoot', 'assets/audio/shoot.mp3');
+            this.load.audio('explosion', 'assets/audio/explosion.mp3');
+            this.load.audio('click', 'assets/audio/click.mp3');
+            this.load.audio('crash', 'assets/audio/crash.mp3');
         }
 
         async function create() {
@@ -443,10 +464,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             scene.input.mouse.disableContextMenu();
             scene.add.tileSprite(TOTAL_WIDTH/2, PLAY_HEIGHT/2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
 
-            // try {
-            //     const bgm = scene.sound.add('bgm', { volume: 0.3, loop: true });
-            //     bgm.play();
-            // } catch(e) {}
+            // INICIANDO SFX (Safe Load)
+            try {
+                sfxShoot = scene.sound.add('shoot', { volume: 0.3 });
+                sfxExplosion = scene.sound.add('explosion', { volume: 0.5 });
+                sfxClick = scene.sound.add('click', { volume: 0.5 });
+                sfxCrash = scene.sound.add('crash', { volume: 0.6 });
+            } catch(e) { console.log("Erro de áudio Phaser", e); }
 
             const hudY = PLAY_HEIGHT;
             const hudBg = scene.add.graphics();
@@ -460,8 +484,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             txtSPD = scene.add.text(textX, startY + 30 + (lineHeight*2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
             txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
             timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0, 0).setDepth(100);
-
-            // ❌ REMOVIDO BOTÃO DE SOM INTERNO ANTIGO
 
             scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
             graphics = scene.add.graphics();
@@ -510,22 +532,16 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 const turnRef = ref(db, `rooms/${roomId}/turns`);
                 unsubscribeTurns = onValue(turnRef, (snapshot) => {
                     if (matchEnded) return;
-
                     const turns = snapshot.val(); if (!turns) return;
                     const currentT = turnRefValue.current; const turnData = turns[currentT];
                     if (turnData && turnData.host && turnData.guest) { if (!isExecuting) runTurnResolution(scene, turnData); }
                 });
-
                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
                 unsubscribeSurrender = onValue(surrenderRef, (snap) => {
-                    const who = snap.val();
-                    if (!who) return;
-
+                    const who = snap.val(); if (!who) return;
                     matchEnded = true;
-
                     try { if (timerEvent) timerEvent.remove(); } catch (e) {}
                     try { scene.input.enabled = false; } catch (e) {}
-
                     try { uiGroup.setVisible(false); } catch (e) {}
                     try { staticHudGroup.setVisible(false); } catch (e) {}
                 });
@@ -548,13 +564,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 if (a.faction === b.faction) return; if (!isExecuting) return;
                 if (a.hasCrashed || b.hasCrashed) return; if (a.uniqueId > b.uniqueId) return; 
                 scene.cameras.main.shake(100, 0.01);
+                // 🔊 SOM CRASH
+                if(sfxCrash) sfxCrash.play();
                 takeDamage(scene, a, 20); takeDamage(scene, b, 20);
                 a.hasCrashed = true; b.hasCrashed = true;
                 showFloatText(scene, (a.x + b.x)/2, (a.y + b.y)/2, t('CRASH_LABEL'), '#ffaa00');
             });
 
             const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-            createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => { if(!isExecuting) { submitTurn(scene); }}, staticHudGroup);
+            createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => { if(!isExecuting) { if(sfxClick) sfxClick.play(); submitTurn(scene); }}, staticHudGroup);
 
             moveHandle = scene.add.circle(0, 0, 10, 0x00ff00).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
             attackHandle = scene.add.circle(0, 0, 10, 0xff0000).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
@@ -652,9 +670,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         async function runTurnResolution(scene, turnData) {
             if (matchEnded) return;
-
             isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
-            
             if (!isTraining) {
                 const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
                 if (!isHost) {
@@ -671,26 +687,20 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                     }
                 }
             }
-
             if (selectedShip) deselectAll(); uiGroup.setVisible(false);
             [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
             const myData = isHost ? turnData.host : turnData.guest;
             const enemyData = isHost ? turnData.guest : turnData.host;
-
             playerSquad.forEach(s => { const plan = myData.find(p => p.index === s.squadIndex); if (plan) { if (plan.move) s.plannedMove = plan.move; if (plan.attack) s.plannedAttack = plan.attack; } });
             enemySquad.forEach(s => { const plan = enemyData.find(p => p.index === s.squadIndex); if (plan) { if (plan.move) s.plannedMove = plan.move; if (plan.attack) s.plannedAttack = plan.attack; } });
-
             [...playerSquad, ...enemySquad].forEach(s => { const target = s.plannedMove || s.plannedAttack; if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y)); });
             [...playerSquad, ...enemySquad].forEach(s => { if (!s.active) return; if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y); if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y); });
-
             await new Promise(r => setTimeout(r, 2500));
-
             if (isHost && !isTraining) {
                 const hpState = {};
                 [...playerSquad, ...enemySquad].forEach(ship => { hpState[`${ship.faction}_${ship.squadIndex}`] = ship.hp; });
                 await update(ref(db, `rooms/${roomId}/gameState`), hpState);
             }
-
             [...playerSquad, ...enemySquad].forEach(s => { s.plannedMove = null; s.plannedAttack = null; if(s.active) s.body.setVelocity(0,0); });
             isExecuting = false; isWaiting = false; turnRefValue.current = turnRefValue.current + 1;
             turnText.setText(t('TURN_YOURS')); uiGroup.setVisible(true); checkWinCondition(); startTimer(scene);
@@ -729,16 +739,16 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 playerSquad.forEach(s => { if (Phaser.Math.Distance.Between(pointer.x, pointer.y, s.x, s.y) < (s.displayWidth * 0.8)) { clickedShip = s; } });
                 if (clickedShip) {
                     if (clickedShip === selectedShip) { deselectAll(); return; }
-                    if (selectedShip) selectedShip.isSelected = false; 
+                    if (selectedShip) selectedShip.isSelected = false; if(sfxClick) sfxClick.play();
                     clickedShip.isSelected = true; selectedShip = clickedShip; updateHandles(); drawUI(scene); updateHUDInfo(); return;
                 }
                 if (selectedShip && selectedShip.active) {
                     const target = clampPoint(pointer.x, pointer.y);
-                    if (pointer.rightButtonDown()) { selectedShip.plannedAttack = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
+                    if (pointer.rightButtonDown()) { if(sfxClick) sfxClick.play(); selectedShip.plannedAttack = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
                     else if (pointer.leftButtonDown()) {
                         const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, target.x, target.y);
                         if (dist <= selectedShip.stats.moveRange) {
-                            if(checkRaycast(selectedShip.x, selectedShip.y, target.x, target.y)) { selectedShip.plannedMove = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
+                            if(checkRaycast(selectedShip.x, selectedShip.y, target.x, target.y)) { if(sfxClick) sfxClick.play(); selectedShip.plannedMove = { x: target.x, y: target.y }; updateHandles(); drawUI(scene); } 
                             else { showFloatText(scene, target.x, target.y, t('BLOCKED_LABEL'), '#ff0000'); }
                         } else { deselectAll(); }
                     }
@@ -749,6 +759,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         function fireWeapon(scene, shooter, tx, ty) {
+            // 🔊 SOM TIRO
+            if(sfxShoot) sfxShoot.play();
             const weapon = shooter.weapon; const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
             const spawnBullet = (angleOffset) => {
                 const angle = baseAngle + angleOffset; const sx = shooter.x + Math.cos(angle) * 45; const sy = shooter.y + Math.sin(angle) * 45;
@@ -769,6 +781,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         function takeDamage(scene, ship, dmg) {
             ship.hp -= dmg; showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
             if (ship.hp <= 0) {
+                // 🔊 SOM EXPLOSÃO
+                if(sfxExplosion) sfxExplosion.play();
                 const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff); scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
                 ship.body.enable = false; ship.setActive(false).setVisible(false); if (selectedShip === ship) deselectAll();
             } else { ship.setTint(0xff0000); scene.time.delayedCall(100, () => { if (ship.active) ship.clearTint(); }); }
@@ -834,9 +848,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
-            if(unsubscribeSurrender) unsubscribeSurrender();
-
-            // ✅ LIMPEZA SEGURA DO PHASER (SEM ÁUDIO)
+            // ✅ LIMPEZA SEGURA DO PHASER (COM PROTEÇÃO DE ÁUDIO)
             if(gameRef.current) {
                 try {
                     const scenes = gameRef.current.scene.getScenes(true);
