@@ -367,12 +367,12 @@ export default function App() {
                                     style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
                                     onClick={() => {
                                         if (window.confirm(t('SURRENDER_CONFIRM'))) {
+                                            // 🔥 CORREÇÃO: Mata o jogo IMEDIATAMENTE e avisa o servidor
                                             if (!isTraining) {
                                                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
                                                 set(surrenderRef, isHost ? 'HOST' : 'GUEST');
-                                            } else {
-                                                handleGameOver("DEFEAT");
                                             }
+                                            handleGameOver("DEFEAT");
                                         }
                                     }}
                                 >
@@ -541,10 +541,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                 unsubscribeSurrender = onValue(surrenderRef, (snapshot) => {
                     const whoSurrendered = snapshot.val();
                     if (whoSurrendered) {
-                        // ✅ CORREÇÃO: Não destrói mais o jogo aqui. Deixa o React limpar.
+                        // ✅ OUVE SE O INIMIGO DESISTIU (Para você ganhar)
                         const myRole = isHost ? 'HOST' : 'GUEST';
-                        if (whoSurrendered === myRole) onGameOver('DEFEAT');
-                        else onGameOver('VICTORY');
+                        if (whoSurrendered !== myRole) onGameOver('VICTORY');
+                        // Nota: Se EU desisti, o botão de cima já me deu DEFEAT.
                     }
                 });
             }
