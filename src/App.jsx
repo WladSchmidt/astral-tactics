@@ -286,8 +286,7 @@ export default function App() {
             />
 
             <div style={styles.backgroundWrapper}>
-                {/* 🔥 WRAPPER HORIZONTAL (JOGO + PLAYER LATERAL) */}
-                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}> {/* GAP PEQUENO ENTRE JOGO E PLAYER */}
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}> 
                     
                     <div style={styles.gameContainer}>
                         <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
@@ -378,14 +377,13 @@ export default function App() {
                         )}
                     </div>
 
-                    {/* 🎧 DOCK MULTIMÍDIA V43 (Vertical Lateral Fora do Jogo) */}
                     <div style={{
                         display: 'flex',
-                        flexDirection: 'column', // Pilha Vertical
+                        flexDirection: 'column',
                         alignItems: 'center',
-                        gap: 8, // Espaço entre botões
+                        gap: 8,
                         background: '#0a141e',
-                        padding: '15px 8px', // Mais alto, mais estreito
+                        padding: '15px 8px',
                         borderRadius: '30px',
                         border: '2px solid #00ccff',
                         boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)',
@@ -394,15 +392,14 @@ export default function App() {
                         {!isGlobalMuted && (
                             <>
                                 <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
-                                    <span>🔼</span> {/* Seta para cima para lista vertical */}
+                                    <span>🔼</span>
                                 </button>
                                 <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
                                     <span style={{fontSize: '22px'}}>{isMusicPlaying ? '⏸' : '▶'}</span>
                                 </button>
                                 <button className="music-btn" onClick={handleNextTrack} title="Próxima">
-                                    <span>🔽</span> {/* Seta para baixo */}
+                                    <span>🔽</span>
                                 </button>
-                                {/* Separador Horizontal */}
                                 <div style={{width: '80%', height: 1, background: '#00ccff', margin: '5px 0', opacity: 0.3}}></div>
                             </>
                         )}
@@ -416,7 +413,7 @@ export default function App() {
                         </button>
                     </div>
                 
-                </div> {/* Fim do Wrapper Horizontal */}
+                </div>
             </div>
         </>
     );
@@ -547,6 +544,28 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
                     const currentT = turnRefValue.current; const turnData = turns[currentT];
                     if (turnData && turnData.host && turnData.guest) { if (!isExecuting) runTurnResolution(scene, turnData); }
                 });
+                
+                // 🔥 Sincronia de HP e Estado Global
+                const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
+                onValue(gameStateRef, (snapshot) => {
+                    if(!snapshot.exists()) return;
+                    const hpData = snapshot.val();
+                    [...playerSquad, ...enemySquad].forEach(ship => {
+                        const key = `${ship.faction}_${ship.squadIndex}`;
+                        if (hpData[key] !== undefined) {
+                            ship.hp = hpData[key];
+                            if(ship.hp <= 0 && ship.active) {
+                                // Se o Host disse que morreu, morre aqui também
+                                if(sfxExplosion) sfxExplosion.play();
+                                const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
+                                scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
+                                ship.setActive(false).setVisible(false);
+                                ship.body.enable = false;
+                            }
+                        }
+                    });
+                });
+
                 const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
                 unsubscribeSurrender = onValue(surrenderRef, (snap) => {
                     const who = snap.val(); if (!who) return;
@@ -651,7 +670,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
             if (!isTraining) {
                 const sSnap = await get(ref(db, `rooms/${roomId}/surrender`));
-                if (sSnap.exists() && sSnap.val()) return; // Jogo já acabou
+                if (sSnap.exists() && sSnap.val()) return; 
             }
 
             const myMoves = playerSquad.map(s => ({ index: s.squadIndex, move: s.plannedMove ? { x: s.plannedMove.x, y: s.plannedMove.y } : null, attack: s.plannedAttack ? { x: s.plannedAttack.x, y: s.plannedAttack.y, weapon: s.weapon.id } : null }));
@@ -681,22 +700,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         async function runTurnResolution(scene, turnData) {
             if (matchEnded) return;
             isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
-            if (!isTraining) {
-                const gameStateRef = ref(db, `rooms/${roomId}/gameState`);
-                if (!isHost) {
-                    const snap = await get(gameStateRef);
-                    if (snap.exists()) {
-                        const hpData = snap.val();
-                        [...playerSquad, ...enemySquad].forEach(ship => {
-                            const key = `${ship.faction}_${ship.squadIndex}`;
-                            if (hpData[key] !== undefined) {
-                                ship.hp = hpData[key];
-                                if (ship.hp <= 0) { ship.setActive(false).setVisible(false); ship.body.enable = false; }
-                            }
-                        });
-                    }
-                }
-            }
+            
             if (selectedShip) deselectAll(); uiGroup.setVisible(false);
             [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
             const myData = isHost ? turnData.host : turnData.guest;
@@ -705,12 +709,22 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             enemySquad.forEach(s => { const plan = enemyData.find(p => p.index === s.squadIndex); if (plan) { if (plan.move) s.plannedMove = plan.move; if (plan.attack) s.plannedAttack = plan.attack; } });
             [...playerSquad, ...enemySquad].forEach(s => { const target = s.plannedMove || s.plannedAttack; if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y)); });
             [...playerSquad, ...enemySquad].forEach(s => { if (!s.active) return; if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y); if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y); });
-            await new Promise(r => setTimeout(r, 2500));
-            if (isHost && !isTraining) {
+            
+            // 🔥 V44: Host calcula dano e salva. Guest APENAS assiste.
+            if (isHost || isTraining) {
+                await new Promise(r => setTimeout(r, 2500));
+                // O Host já calculou o dano via física (takeDamage rodou). Salva o estado final.
                 const hpState = {};
                 [...playerSquad, ...enemySquad].forEach(ship => { hpState[`${ship.faction}_${ship.squadIndex}`] = ship.hp; });
-                await update(ref(db, `rooms/${roomId}/gameState`), hpState);
+                
+                if(!isTraining) {
+                    await update(ref(db, `rooms/${roomId}/gameState`), hpState);
+                }
+            } else {
+                // Guest espera a animação acabar (os dados virão do Firebase listener acima)
+                await new Promise(r => setTimeout(r, 2500));
             }
+
             [...playerSquad, ...enemySquad].forEach(s => { s.plannedMove = null; s.plannedAttack = null; if(s.active) s.body.setVelocity(0,0); });
             isExecuting = false; isWaiting = false; turnRefValue.current = turnRefValue.current + 1;
             turnText.setText(t('TURN_YOURS')); uiGroup.setVisible(true); checkWinCondition(); startTimer(scene);
@@ -788,7 +802,23 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         function takeDamage(scene, ship, dmg) {
-            ship.hp -= dmg; showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
+            // 🔥 V44: GUEST SÓ VER ANIMAÇÃO
+            // Se for GUEST e não for treino, ele não desconta HP aqui.
+            // Ele espera o Firebase dizer o HP novo.
+            // Mas ele mostra o texto de dano e explosão pra não ficar estranho.
+            
+            if (!isHost && !isTraining) {
+                showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
+                if (ship.hp - dmg <= 0) { // Simulação visual de morte
+                     const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff); 
+                     scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
+                }
+                return; // NÃO ALTERA ship.hp
+            }
+
+            // Lógica do HOST (Autoridade)
+            ship.hp -= dmg; 
+            showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
             if (ship.hp <= 0) {
                 if(sfxExplosion) sfxExplosion.play();
                 const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff); scene.tweens.add({targets: boom, scale: 3, alpha: 0, duration: 400, onComplete:()=>boom.destroy()});
