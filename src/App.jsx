@@ -274,7 +274,7 @@ export default function App() {
                 * { box-sizing: border-box; user-select: none; }
                 .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
                 input::placeholder { color: #555; }
-                .music-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #00ccff; padding: 0 8px; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+                .music-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #00ccff; padding: 5px 0; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
                 .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
             `}</style>
 
@@ -286,133 +286,137 @@ export default function App() {
             />
 
             <div style={styles.backgroundWrapper}>
-                <div style={styles.gameContainer}>
-                    <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
-                        <button onClick={()=>setLang('PT')} style={{ color: lang==='PT'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>PT</button>
-                        <div style={{width:1, background:'#555'}}></div>
-                        <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
+                {/* 🔥 WRAPPER HORIZONTAL (JOGO + PLAYER LATERAL) */}
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}> {/* GAP PEQUENO ENTRE JOGO E PLAYER */}
+                    
+                    <div style={styles.gameContainer}>
+                        <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
+                            <button onClick={()=>setLang('PT')} style={{ color: lang==='PT'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>PT</button>
+                            <div style={{width:1, background:'#555'}}></div>
+                            <button onClick={()=>setLang('EN')} style={{ color: lang==='EN'?'#00ff00':'#888', fontWeight:'bold', cursor:'pointer', background:'none', border:'none', fontSize:'14px' }}>EN</button>
+                        </div>
+
+                        {gameState === 'LOBBY' && (
+                            <div style={styles.menuBox}>
+                                <div style={styles.menuContent}>
+                                    <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
+                                    <p style={{color:'#00ccff', marginBottom:30, fontSize:'1.2rem', textShadow:'0 0 10px #00ccff'}}>{t('MAIN_SUBTITLE')}</p>
+                                    <button style={{...styles.btn, background: '#444', width:'100%', marginBottom: 30, border: '1px solid #666'}} onClick={startTraining}>{t('BTN_TRAINING')}</button>
+                                    <div style={{display:'flex', gap: 40}}>
+                                        <div style={styles.lobbyBox}>
+                                            <h3 style={{color:'#fff'}}>{t('HOST_TITLE')}</h3>
+                                            <button style={styles.btn} onClick={createRoom}>{t('HOST_BTN')}</button>
+                                        </div>
+                                        <div style={styles.lobbyBox}>
+                                            <h3 style={{color:'#fff'}}>{t('GUEST_TITLE')}</h3>
+                                            <input type="text" maxLength={4} style={styles.input} value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} placeholder={t('INPUT_PLACEHOLDER')}/>
+                                            <button style={styles.btn} onClick={joinRoom}>{t('GUEST_BTN')}</button>
+                                        </div>
+                                    </div>
+                                    <p style={{marginTop:20, color:'#ffaa00', fontSize:14, fontWeight:'bold'}}>{statusMsg}</p>
+                                </div>
+                            </div>
+                        )}
+                        {gameState === 'MENU' && (
+                            <div style={styles.menuBox}>
+                                <div style={{position:'absolute', top: 20, right: 20, background:'rgba(0,0,0,0.8)', padding:'10px', borderRadius:8, border:'1px solid #00ccff'}}>
+                                    <span style={{color:'#888', fontSize:12}}>{t('ROOM_LABEL')}</span> <span style={{color:'#00ccff', fontSize:20, fontWeight:'bold'}}>{roomId}</span>
+                                </div>
+                                <div style={styles.menuContent}>
+                                    <div style={styles.instructionsBox}><p style={{margin:0, color:'#00ccff', fontWeight:'bold'}}>{t('SELECT_INSTRUCT')}</p></div>
+                                    <div style={styles.cardRow}>
+                                        {Object.values(SHIP_STATS).map(ship => (
+                                            <div key={ship.id} className="ship-card" style={styles.card} onClick={() => { playClick(); if(mySquad.length < 3) setMySquad([...mySquad, ship.id]) }}>
+                                                <img src={SHIP_IMAGES[ship.sprite]} alt={ship.name} style={styles.cardImage} />
+                                                <strong style={{fontSize:'1rem', color:'#fff', display:'block'}}>{ship.name}</strong>
+                                                <div style={styles.statLine}>HP: {ship.hp} | SPD: {ship.speed}</div>
+                                                <div style={{fontSize:'10px', color:'#888', marginTop:5}}>{t(ship.descKey)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={styles.slotsContainer}>
+                                        {mySquad.map((id, idx) => (
+                                            <div key={idx} style={styles.slotActive} onClick={() => { playClick(); const ns = [...mySquad]; ns.splice(idx,1); setMySquad(ns); }}>{SHIP_STATS[id].name} ✖</div>
+                                        ))}
+                                    </div>
+                                    <button disabled={mySquad.length !== 3} style={{...styles.startBtn, opacity: mySquad.length === 3 ? 1 : 0.5}} onClick={lockInSquad}>{t('BTN_READY')}</button>
+                                    <p style={{marginTop:10, color:'#ffaa00'}}>{statusMsg}</p>
+                                </div>
+                            </div>
+                        )}
+                        {gameState === 'PLAYING' && (
+                            <>
+                                <div style={{position: 'absolute', top: 15, right: 15, zIndex: 1000}}>
+                                    <button 
+                                        style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
+                                        onClick={async () => {
+                                            if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
+                                            if (isTraining) { handleGameOver("DEFEAT"); return; }
+                                            try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); } 
+                                            catch (err) { alert("Erro: " + err.message); }
+                                        }}
+                                    >
+                                        {t('BTN_SURRENDER')}
+                                    </button>
+                                </div>
+                                <PhaserGame 
+                                    key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
+                                    roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} 
+                                    onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} 
+                                    isGlobalMuted={isGlobalMuted} 
+                                />
+                            </>
+                        )}
+                        {gameState === 'GAMEOVER' && (
+                            <div style={styles.overlay}>
+                                <h1 style={{...styles.title, color: getResultColor()}}>{t(gameResult)}</h1>
+                                <div style={{display:'flex', gap: 20, marginTop: 30}}>
+                                    <button style={styles.btn} onClick={restartGame}>{t('BTN_RESTART')}</button>
+                                    <button style={{...styles.btn, background: '#444'}} onClick={backToMenu}>{t('BTN_MENU')}</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* 🎧 DOCK MULTIMÍDIA V42 (Cápsula Flutuante Compacta) */}
+                    {/* 🎧 DOCK MULTIMÍDIA V43 (Vertical Lateral Fora do Jogo) */}
                     <div style={{
-                        position: 'absolute', 
-                        bottom: 15,  // GAP do fundo
-                        right: 15,   // GAP da direita
-                        zIndex: 9999,
-                        display: 'flex', alignItems: 'center',
-                        
-                        background: '#0a141e', // Fundo Sólido
-                        padding: '6px 12px',   // Bem mais compacto
-                        borderRadius: '30px',  // Formato Pílula/Cápsula 360º
-                        border: '2px solid #00ccff', // Borda Neon 360º
-                        boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)'
+                        display: 'flex',
+                        flexDirection: 'column', // Pilha Vertical
+                        alignItems: 'center',
+                        gap: 8, // Espaço entre botões
+                        background: '#0a141e',
+                        padding: '15px 8px', // Mais alto, mais estreito
+                        borderRadius: '30px',
+                        border: '2px solid #00ccff',
+                        boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)',
+                        zIndex: 9999
                     }}>
                         {!isGlobalMuted && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <>
                                 <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
-                                    <span style={{fontSize: '16px'}}>⏮</span>
+                                    <span>🔼</span> {/* Seta para cima para lista vertical */}
                                 </button>
                                 <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
-                                    <span style={{fontSize: '18px'}}>{isMusicPlaying ? '⏸' : '▶'}</span>
+                                    <span style={{fontSize: '22px'}}>{isMusicPlaying ? '⏸' : '▶'}</span>
                                 </button>
                                 <button className="music-btn" onClick={handleNextTrack} title="Próxima">
-                                    <span style={{fontSize: '16px'}}>⏭</span>
+                                    <span>🔽</span> {/* Seta para baixo */}
                                 </button>
-                                {/* Separador Vertical */}
-                                <div style={{width: 1, height: 18, background: '#00ccff', margin: '0 8px', opacity: 0.3}}></div>
-                            </div>
+                                {/* Separador Horizontal */}
+                                <div style={{width: '80%', height: 1, background: '#00ccff', margin: '5px 0', opacity: 0.3}}></div>
+                            </>
                         )}
                         <button 
                             className="music-btn" 
                             onClick={() => setIsGlobalMuted(!isGlobalMuted)} 
                             title="Master Mute"
-                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00', marginLeft: isGlobalMuted ? 0 : 2}}
+                            style={{color: isGlobalMuted ? '#ff4444' : '#00ff00'}}
                         >
-                            <span style={{fontSize: '18px'}}>{isGlobalMuted ? '🔇' : '🔊'}</span>
+                            <span style={{fontSize: '22px'}}>{isGlobalMuted ? '🔇' : '🔊'}</span>
                         </button>
                     </div>
-
-                    {gameState === 'LOBBY' && (
-                        <div style={styles.menuBox}>
-                            <div style={styles.menuContent}>
-                                <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
-                                <p style={{color:'#00ccff', marginBottom:30, fontSize:'1.2rem', textShadow:'0 0 10px #00ccff'}}>{t('MAIN_SUBTITLE')}</p>
-                                <button style={{...styles.btn, background: '#444', width:'100%', marginBottom: 30, border: '1px solid #666'}} onClick={startTraining}>{t('BTN_TRAINING')}</button>
-                                <div style={{display:'flex', gap: 40}}>
-                                    <div style={styles.lobbyBox}>
-                                        <h3 style={{color:'#fff'}}>{t('HOST_TITLE')}</h3>
-                                        <button style={styles.btn} onClick={createRoom}>{t('HOST_BTN')}</button>
-                                    </div>
-                                    <div style={styles.lobbyBox}>
-                                        <h3 style={{color:'#fff'}}>{t('GUEST_TITLE')}</h3>
-                                        <input type="text" maxLength={4} style={styles.input} value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} placeholder={t('INPUT_PLACEHOLDER')}/>
-                                        <button style={styles.btn} onClick={joinRoom}>{t('GUEST_BTN')}</button>
-                                    </div>
-                                </div>
-                                <p style={{marginTop:20, color:'#ffaa00', fontSize:14, fontWeight:'bold'}}>{statusMsg}</p>
-                            </div>
-                        </div>
-                    )}
-                    {gameState === 'MENU' && (
-                        <div style={styles.menuBox}>
-                             <div style={{position:'absolute', top: 20, right: 20, background:'rgba(0,0,0,0.8)', padding:'10px', borderRadius:8, border:'1px solid #00ccff'}}>
-                                <span style={{color:'#888', fontSize:12}}>{t('ROOM_LABEL')}</span> <span style={{color:'#00ccff', fontSize:20, fontWeight:'bold'}}>{roomId}</span>
-                            </div>
-                            <div style={styles.menuContent}>
-                                <div style={styles.instructionsBox}><p style={{margin:0, color:'#00ccff', fontWeight:'bold'}}>{t('SELECT_INSTRUCT')}</p></div>
-                                <div style={styles.cardRow}>
-                                    {Object.values(SHIP_STATS).map(ship => (
-                                        <div key={ship.id} className="ship-card" style={styles.card} onClick={() => { playClick(); if(mySquad.length < 3) setMySquad([...mySquad, ship.id]) }}>
-                                            <img src={SHIP_IMAGES[ship.sprite]} alt={ship.name} style={styles.cardImage} />
-                                            <strong style={{fontSize:'1rem', color:'#fff', display:'block'}}>{ship.name}</strong>
-                                            <div style={styles.statLine}>HP: {ship.hp} | SPD: {ship.speed}</div>
-                                            <div style={{fontSize:'10px', color:'#888', marginTop:5}}>{t(ship.descKey)}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div style={styles.slotsContainer}>
-                                    {mySquad.map((id, idx) => (
-                                        <div key={idx} style={styles.slotActive} onClick={() => { playClick(); const ns = [...mySquad]; ns.splice(idx,1); setMySquad(ns); }}>{SHIP_STATS[id].name} ✖</div>
-                                    ))}
-                                </div>
-                                <button disabled={mySquad.length !== 3} style={{...styles.startBtn, opacity: mySquad.length === 3 ? 1 : 0.5}} onClick={lockInSquad}>{t('BTN_READY')}</button>
-                                <p style={{marginTop:10, color:'#ffaa00'}}>{statusMsg}</p>
-                            </div>
-                        </div>
-                    )}
-                    {gameState === 'PLAYING' && (
-                        <>
-                            <div style={{position: 'absolute', top: 15, right: 15, zIndex: 1000}}>
-                                <button 
-                                    style={{background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px'}}
-                                    onClick={async () => {
-                                        if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
-                                        if (isTraining) { handleGameOver("DEFEAT"); return; }
-                                        try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); } 
-                                        catch (err) { alert("Erro: " + err.message); }
-                                    }}
-                                >
-                                    {t('BTN_SURRENDER')}
-                                </button>
-                            </div>
-                            <PhaserGame 
-                                key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`} 
-                                roomId={roomId} isHost={isHost} isTraining={isTraining} mySquadList={mySquad} 
-                                onGameOver={handleGameOver} onExit={backToMenu} lang={lang} t={t} 
-                                isGlobalMuted={isGlobalMuted} 
-                            />
-                        </>
-                    )}
-                    {gameState === 'GAMEOVER' && (
-                        <div style={styles.overlay}>
-                            <h1 style={{...styles.title, color: getResultColor()}}>{t(gameResult)}</h1>
-                            <div style={{display:'flex', gap: 20, marginTop: 30}}>
-                                <button style={styles.btn} onClick={restartGame}>{t('BTN_RESTART')}</button>
-                                <button style={{...styles.btn, background: '#444'}} onClick={backToMenu}>{t('BTN_MENU')}</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                
+                </div> {/* Fim do Wrapper Horizontal */}
             </div>
         </>
     );
@@ -852,17 +856,12 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         return () => { 
             if(unsubscribeTurns) unsubscribeTurns();
-            // ✅ LIMPEZA SEGURA DO PHASER (COM PROTEÇÃO DE ÁUDIO)
             if(gameRef.current) {
-                try {
-                    const scenes = gameRef.current.scene.getScenes(true);
-                    if(scenes) { scenes.forEach(scene => { if(scene.sound) { scene.sound.stopAll(); scene.sound.removeAll(); }}); }
-                } catch(e) {}
                 gameRef.current.destroy(true); 
                 gameRef.current = null;
             }
         }
-    }, [roomId, isHost, isTraining, lang]); // ✅ CORREÇÃO: Dependências para evitar "Congelamento"
+    }, [roomId, isHost, isTraining, lang]);
 
     return <div id="phaser-container" />;
 };
