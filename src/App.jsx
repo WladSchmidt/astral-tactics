@@ -568,7 +568,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
-        const radius = obs.width * 0.38;
+        const radius = obs.width * 0.25;
         obs.body.setCircle(radius);
         const offset = (obs.width - (radius * 2)) / 2;
         obs.body.setOffset(offset, offset);
