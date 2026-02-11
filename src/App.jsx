@@ -159,7 +159,7 @@ export default function App() {
   const t = (key) => TEXTS[lang][key] || key;
   const surrenderHandledRef = useRef(false);
 
-  // 🔥 AUTOPLAY LÓGICA (mantido como você mandou)
+  // 🔥 AUTOPLAY LÓGICA
   useEffect(() => {
     if (!audioRef.current) return;
     audioRef.current.volume = 0.3;
@@ -496,7 +496,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       backgroundColor: '#000000',
       parent: 'phaser-container',
       disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
+      physics: { default: 'arcade', arcade: { debug: false, gravity: { y: 0 }, fps: 60, fixedStep: true } },
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
@@ -577,16 +577,12 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         } catch (e) { mapData = generateMapData(); }
       }
 
-      // =========================================================
-      // ✅ ALTERAÇÃO #1: HITBOX DO ASTEROIDE (radius/offset)
-      // - usa displayWidth/displayHeight (considera scale)
-      // - centraliza o círculo corretamente
-      // =========================================================
+      // ✅ ALTERAÇÃO: ASTEROIDE COM HITBOX JUSTO
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
 
-        const radius = obs.displayWidth * 0.18; // ajuste fino aqui (ex: 0.16 menor / 0.20 maior)
+        const radius = obs.displayWidth * 0.18; 
         obs.body.setCircle(radius);
 
         const offsetX = (obs.displayWidth / 2) - radius;
@@ -595,7 +591,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         obs.refreshBody();
       });
-      // =========================================================
 
       let mySquadData, enemySquadData;
       if (isTraining) { mySquadData = mySquadList; enemySquadData = ['FLUX', 'VECTOR', 'COLOSSUS']; }
@@ -609,7 +604,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       const pY = (isHost || isTraining) ? 60 : PLAY_HEIGHT - 60;
       const eY = (isHost || isTraining) ? PLAY_HEIGHT - 60 : 60;
 
-      // ✅ IDs ABSOLUTOS DE REDE (HOST_0..2 / GUEST_0..2)
       const myOwner = isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST');
       const enemyOwner = isTraining ? 'GUEST' : (isHost ? 'GUEST' : 'HOST');
 
@@ -639,24 +633,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       }
 
+      // ✅ MUDANÇA: APENAS VISUAL (SEM DANO LOCAL)
       scene.physics.add.overlap(projectileGroup, shipsGroup, (projectile, ship) => {
         if (!projectile.active || !ship.active) return;
         if (projectile.ownerNetOwner === ship.netOwner) return;
 
         const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
         scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+
         projectile.destroy();
-
-        if (isTraining) {
-          takeDamage(scene, ship, projectile.damage, true);
-          return;
-        }
-
-        if (isHost) {
-          takeDamage(scene, ship, projectile.damage, true);
-        } else {
-          takeDamagePredicted(scene, ship, projectile.damage);
-        }
       });
 
       scene.physics.add.collider(projectileGroup, obstacleGroup, (projectile) => {
@@ -665,6 +650,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         projectile.destroy();
       });
 
+      // ✅ MUDANÇA: APENAS VISUAL (SEM DANO LOCAL)
       scene.physics.add.overlap(shipsGroup, shipsGroup, (a, b) => {
         if (a === b) return;
         if (!a.active || !b.active) return;
@@ -678,20 +664,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         a.hasCrashed = true; b.hasCrashed = true;
         showFloatText(scene, (a.x + b.x) / 2, (a.y + b.y) / 2, t('CRASH_LABEL'), '#ffaa00');
-
-        if (isTraining) {
-          takeDamage(scene, a, 20, true);
-          takeDamage(scene, b, 20, true);
-          return;
-        }
-
-        if (isHost) {
-          takeDamage(scene, a, 20, true);
-          takeDamage(scene, b, 20, true);
-        } else {
-          takeDamagePredicted(scene, a, 20);
-          takeDamagePredicted(scene, b, 20);
-        }
       });
 
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
@@ -733,6 +705,165 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       startTimer(scene);
     }
 
+    // --- FUNÇÕES DETERMINÍSTICAS (RAYCASTING) ---
+
+    // ✅ Função matemática pura para ver se um raio acerta um círculo
+    function rayCircleHit(ox, oy, dx, dy, cx, cy, r) {
+      const fx = ox - cx;
+      const fy = oy - cy;
+
+      const b = 2 * (fx * dx + fy * dy);
+      const c = (fx * fx + fy * fy) - (r * r);
+
+      const disc = b * b - 4 * c;
+      if (disc < 0) return null;
+
+      const sqrtDisc = Math.sqrt(disc);
+      const t1 = (-b - sqrtDisc) / 2;
+      const t2 = (-b + sqrtDisc) / 2;
+
+      let t = null;
+      if (t1 >= 0 && t2 >= 0) t = Math.min(t1, t2);
+      else if (t1 >= 0) t = t1;
+      else if (t2 >= 0) t = t2;
+
+      return t;
+    }
+
+    // ✅ HOST calcula o resultado (Agora verifica Obstáculos também!)
+    function computeHostTurnResult(scene, myData, enemyData) {
+      const events = [];
+      const allShips = [...playerSquad, ...enemySquad];
+      const pos = {};
+      
+      // Snapshot inicial
+      allShips.forEach(s => {
+        pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
+      });
+
+      const applyDmg = (targetNetId, dmg, hitX, hitY) => {
+        if (!pos[targetNetId] || !pos[targetNetId].active) return;
+        pos[targetNetId].hp -= dmg;
+        events.push({ type: 'DMG', target: targetNetId, dmg, x: hitX, y: hitY });
+        if (pos[targetNetId].hp <= 0) {
+          pos[targetNetId].active = false;
+          events.push({ type: 'KILL', target: targetNetId, x: hitX, y: hitY });
+        }
+      };
+
+      // Helper para checar obstáculos
+      const getFirstHit = (ox, oy, dx, dy, targetSquad) => {
+        let best = null;
+
+        // 1. Checa Naves Inimigas
+        targetSquad.forEach(tgt => {
+          if (!tgt.active) return;
+          const t = rayCircleHit(ox, oy, dx, dy, tgt.x, tgt.y, (tgt.body?.radius ?? 20));
+          if (t !== null && t > 0) {
+             if (!best || t < best.t) best = { t, type: 'SHIP', target: tgt };
+          }
+        });
+
+        // 2. Checa Asteroides (BLOQUEIO DE TIRO)
+        obstacleGroup.getChildren().forEach(obs => {
+           // obs.body.radius deve estar correto pelo setCircle anterior
+           const t = rayCircleHit(ox, oy, dx, dy, obs.x, obs.y, obs.body.radius);
+           if (t !== null && t > 0) {
+              if (!best || t < best.t) best = { t, type: 'OBSTACLE', target: obs };
+           }
+        });
+
+        return best;
+      };
+
+      const processShooter = (shooterShip, planAttack) => {
+        if (!shooterShip.active) return;
+        if (!planAttack) return;
+
+        const weaponId = planAttack.weapon || 'CANNON';
+        const weapon = WEAPONS[weaponId] || WEAPONS.CANNON;
+        const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
+        const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
+
+        angleOffsets.forEach((off) => {
+          const ang = baseAngle + off;
+          const dx = Math.cos(ang);
+          const dy = Math.sin(ang);
+
+          // Quem são os inimigos desse atirador?
+          const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+            ? enemySquad : playerSquad;
+
+          const hit = getFirstHit(shooterShip.x, shooterShip.y, dx, dy, enemies);
+
+          if (hit) {
+             // Limite de alcance para não atirar infinito
+             if (hit.t > 1400) return;
+
+             const hitX = shooterShip.x + dx * hit.t;
+             const hitY = shooterShip.y + dy * hit.t;
+
+             if (hit.type === 'SHIP') {
+                applyDmg(hit.target.netId, weapon.damage, hitX, hitY);
+             } 
+             // Se for OBSTACLE, o tiro bate e para (não dá dano em ninguém)
+             events.push({ type: 'HITFX', x: hitX, y: hitY });
+          }
+        });
+      };
+
+      // Processa planos
+      playerSquad.forEach(s => {
+        const p = myData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
+      });
+      enemySquad.forEach(s => {
+        const p = enemyData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
+      });
+
+      // Checagem de Colisão (Crash)
+      const plannedPos = {};
+      allShips.forEach(s => {
+        const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+            ? myData.find(p => p.index === s.squadIndex)
+            : enemyData.find(p => p.index === s.squadIndex);
+        if (plan?.move && s.active) plannedPos[s.netId] = { x: plan.move.x, y: plan.move.y };
+        else plannedPos[s.netId] = { x: s.x, y: s.y };
+      });
+
+      playerSquad.forEach(a => {
+        if (!a.active) return;
+        enemySquad.forEach(b => {
+          if (!b.active) return;
+          const pa = plannedPos[a.netId];
+          const pb = plannedPos[b.netId];
+          const dx = pa.x - pb.x;
+          const dy = pa.y - pb.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const ra = (a.body?.radius ?? 20);
+          const rb = (b.body?.radius ?? 20);
+
+          if (dist <= (ra + rb)) {
+            applyDmg(a.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            applyDmg(b.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            events.push({ type: 'CRASHFX', x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
+          }
+        });
+      });
+
+      // Gera estado final
+      const finalHpState = {};
+      allShips.forEach(s => {
+        const st = pos[s.netId];
+        finalHpState[s.netId] = st ? st.hp : s.hp;
+      });
+
+      return { hpState: finalHpState, events, at: Date.now() };
+    }
+
+    // --- FIM FUNÇÕES DETERMINÍSTICAS ---
+
     function startTimer(scene) {
       if (timerEvent) timerEvent.remove();
       const endTime = Date.now() + (TURN_TIME_LIMIT * 1000);
@@ -753,8 +884,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             if (timeLeft <= 10) timerText.setColor('#ff0000');
             if (timeLeft <= 0) submitTurn(scene);
           }
-        },
-        loop: true
+        }, loop: true
       });
     }
 
@@ -790,7 +920,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       ship.netOwner = netOwner;
       ship.netId = `${netOwner}_${index}`;
 
-      ship.weapon = WEAPONS.CANNON; // default local, mas será sobrescrito pelo plano do turno
+      ship.weapon = WEAPONS.CANNON; 
       ship.hasCrashed = false;
 
       shipsGroup.add(ship);
@@ -897,18 +1027,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       const myData = isHost ? turnData.host : turnData.guest;
       const enemyData = isHost ? turnData.guest : turnData.host;
 
-      // =========================================================
-      // ✅ ALTERAÇÃO #2: SYNC DO WEAPON (CANNON vs FLAK)
-      // Antes: você só copiava x/y do attack, mas ignorava attack.weapon
-      // Agora: aplica o weapon correto para cada nave antes de atirar
-      // =========================================================
       playerSquad.forEach(s => {
         const plan = myData.find(p => p.index === s.squadIndex);
         if (plan) {
           if (plan.move) s.plannedMove = plan.move;
           if (plan.attack) {
             const wid = plan.attack.weapon || 'CANNON';
-            s.weapon = WEAPONS[wid] || WEAPONS.CANNON; // ✅ aqui está a correção
+            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
             s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
           }
         }
@@ -920,12 +1045,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           if (plan.move) s.plannedMove = plan.move;
           if (plan.attack) {
             const wid = plan.attack.weapon || 'CANNON';
-            s.weapon = WEAPONS[wid] || WEAPONS.CANNON; // ✅ aqui está a correção
+            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
             s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
           }
         }
       });
-      // =========================================================
 
       [...playerSquad, ...enemySquad].forEach(s => {
         const target = s.plannedMove || s.plannedAttack;
@@ -938,16 +1062,20 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
       });
 
+      // ✅ MUDANÇA: Lógica Determinística
+      let hostResult = null;
+      if (!isTraining && isHost) {
+        const currentT = turnRefValue.current;
+        hostResult = computeHostTurnResult(scene, myData, enemyData);
+        await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
+      }
+
       await new Promise(r => setTimeout(r, 2500));
 
       if (!isTraining) {
         const currentT = turnRefValue.current;
-        const hpState = {};
-        [...playerSquad, ...enemySquad].forEach(ship => { hpState[ship.netId] = ship.hp; });
-
         if (isHost) {
-          await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), { hpState, at: Date.now() });
-          applyHpState(hpState);
+          applyHpState(hostResult?.hpState);
         } else {
           const data = await waitTurnResult(roomId, currentT);
           applyHpState(data?.hpState);
@@ -996,10 +1124,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     function updateHUDInfo() {
       if (selectedShip && selectedShip.active) {
         txtName.setText(selectedShip.stats.name);
-
         const shownHp = Math.floor(selectedShip.predictedHp ?? selectedShip.hp);
         txtHP.setText(`HP : ${shownHp}/${selectedShip.stats.hp}`);
-
         txtSPD.setText(`SPD: ${selectedShip.stats.speed}`);
         const currentDmg = selectedShip.weapon.damage;
         const dmgDisplay = selectedShip.weapon.type === 'SPREAD' ? `${currentDmg}x3` : currentDmg;
@@ -1044,7 +1170,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         if (selectedShip && selectedShip.active) {
           const target = clampPoint(pointer.x, pointer.y);
-
           if (pointer.rightButtonDown()) {
             if (sfxClick) sfxClick.play();
             selectedShip.plannedAttack = { x: target.x, y: target.y };
@@ -1074,33 +1199,25 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
     function fireWeapon(scene, shooter, tx, ty) {
       if (sfxShoot) sfxShoot.play();
-
       const weapon = shooter.weapon;
       const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
-
       const spawnBullet = (angleOffset) => {
         const angle = baseAngle + angleOffset;
         const sx = shooter.x + Math.cos(angle) * 45;
         const sy = shooter.y + Math.sin(angle) * 45;
-
         const proj = scene.add.circle(sx, sy, weapon.radius, weapon.color);
         scene.physics.add.existing(proj);
         projectileGroup.add(proj);
-
         proj.owner = shooter;
         proj.ownerNetOwner = shooter.netOwner;
         proj.damage = weapon.damage;
-
         proj.body.setCircle(weapon.radius + 8);
         proj.body.setOffset(-8, -8);
-
         const velocityX = Math.cos(angle) * weapon.speed;
         const velocityY = Math.sin(angle) * weapon.speed;
         proj.body.setVelocity(velocityX, velocityY);
-
         scene.time.delayedCall(2000, () => { if (proj.active) proj.destroy(); });
       };
-
       if (weapon.type === 'SINGLE') spawnBullet(0);
       else if (weapon.type === 'SPREAD') { spawnBullet(0); spawnBullet(-0.2); spawnBullet(0.2); }
     }
@@ -1112,14 +1229,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     }
 
     function takeDamage(scene, ship, dmg, allowKill) {
+      // Usado apenas no modo Treino local
       ship.hp -= dmg;
       showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
-
       if (ship.hp <= 0 && allowKill) {
         if (sfxExplosion) sfxExplosion.play();
         const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
         scene.tweens.add({ targets: boom, scale: 3, alpha: 0, duration: 400, onComplete: () => boom.destroy() });
-
         ship.body.enable = false;
         ship.setActive(false).setVisible(false);
         if (selectedShip === ship) deselectAll();
@@ -1130,17 +1246,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     }
 
     function takeDamagePredicted(scene, ship, dmg) {
-      if (!ship.active) return;
-
-      const base = (ship.predictedHp ?? ship.hp);
-      ship.predictedHp = base - dmg;
-
+      // Visual only
       showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff6666');
-
       ship.setTint(0xff6666);
       scene.time.delayedCall(80, () => { if (ship.active) ship.clearTint(); });
-
-      if (selectedShip === ship) updateHUDInfo();
     }
 
     function checkRaycast(x1, y1, x2, y2) {
@@ -1153,18 +1262,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     }
 
     function showFloatText(scene, x, y, text, color) {
-      const txt = scene.add.text(x, y, text, { font: '20px monospace', fill: color, stroke: '#000', strokeThickness: 3 })
-        .setOrigin(0.5).setDepth(200);
+      const txt = scene.add.text(x, y, text, { font: '20px monospace', fill: color, stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(200);
       scene.tweens.add({ targets: txt, y: y - 50, alpha: 0, duration: 1000, onComplete: () => txt.destroy() });
     }
 
     function drawHP(ship) {
       const hpForBar = (ship.predictedHp ?? ship.hp);
       const pct = Math.max(0, hpForBar / ship.stats.hp);
-
       graphics.fillStyle(0x000000);
       graphics.fillRect(ship.x - 20, ship.y - 45, 40, 6);
-
       graphics.fillStyle(ship.faction === 'PLAYER' ? 0x00ff00 : 0xff0000);
       graphics.fillRect(ship.x - 20, ship.y - 45, 40 * pct, 6);
     }
@@ -1173,93 +1279,38 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       uiGroup.removeAll(true);
       if (!selectedShip) return;
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-
-      createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50,
-        selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333,
-        () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); },
-        uiGroup
-      );
-
-      createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50,
-        selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333,
-        () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); },
-        uiGroup
-      );
-
+      createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); }, uiGroup);
+      createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); }, uiGroup);
       let cancelX = 250;
-      if (selectedShip.plannedMove) {
-        createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000,
-          () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); },
-          uiGroup
-        );
-        cancelX += 110;
-      }
-      if (selectedShip.plannedAttack) {
-        createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000,
-          () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); },
-          uiGroup
-        );
-      }
+      if (selectedShip.plannedMove) { createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000, () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); }, uiGroup); cancelX += 110; }
+      if (selectedShip.plannedAttack) { createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000, () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); }, uiGroup); }
     }
 
     function createButton(scene, x, y, text, w, h, color, callback, targetGroup) {
       const container = scene.add.container(x, y);
-      const bg = scene.add.rectangle(0, 0, w, h, color)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', callback);
-
-      const label = scene.add.text(0, 0, text, {
-        fontSize: '13px', fontStyle: 'bold', fontFamily: 'Arial', align: 'center'
-      }).setOrigin(0.5);
-
-      container.add([bg, label]);
-      if (targetGroup) targetGroup.add(container);
-      return container;
+      const bg = scene.add.rectangle(0, 0, w, h, color).setInteractive({ useHandCursor: true }).on('pointerdown', callback);
+      const label = scene.add.text(0, 0, text, { fontSize: '13px', fontStyle: 'bold', fontFamily: 'Arial', align: 'center' }).setOrigin(0.5);
+      container.add([bg, label]); if (targetGroup) targetGroup.add(container); return container;
     }
 
     function updateHandles() {
       if (!selectedShip) return;
-
-      if (selectedShip.plannedMove) {
-        moveHandle.setPosition(selectedShip.plannedMove.x, selectedShip.plannedMove.y);
-        moveHandle.setVisible(true);
-        moveHandle.setFillStyle(0x00ff00);
-      } else {
-        moveHandle.setVisible(false);
-      }
-
-      if (selectedShip.plannedAttack) {
-        attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y);
-        attackHandle.setVisible(true);
-      } else {
-        attackHandle.setVisible(false);
-      }
+      if (selectedShip.plannedMove) { moveHandle.setPosition(selectedShip.plannedMove.x, selectedShip.plannedMove.y); moveHandle.setVisible(true); moveHandle.setFillStyle(0x00ff00); } else { moveHandle.setVisible(false); }
+      if (selectedShip.plannedAttack) { attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y); attackHandle.setVisible(true); } else { attackHandle.setVisible(false); }
     }
 
     function update() {
       graphics.clear();
-
       if (isExecuting) {
-        moveHandle.setVisible(false);
-        attackHandle.setVisible(false);
-        [...playerSquad, ...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
-        return;
+        moveHandle.setVisible(false); attackHandle.setVisible(false);
+        [...playerSquad, ...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); }); return;
       }
-
       [...playerSquad].forEach(ship => {
         if (!ship.active) return;
-
         drawHP(ship);
-
-        if (ship.plannedMove) {
-          graphics.lineStyle(2, 0x00ff00, 0.8);
-          graphics.lineBetween(ship.x, ship.y, ship.plannedMove.x, ship.plannedMove.y);
-        }
-
+        if (ship.plannedMove) { graphics.lineStyle(2, 0x00ff00, 0.8); graphics.lineBetween(ship.x, ship.y, ship.plannedMove.x, ship.plannedMove.y); }
         if (ship.plannedAttack) {
-          graphics.lineStyle(2, 0xff0000, 0.8);
-          graphics.lineBetween(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
-
+          graphics.lineStyle(2, 0xff0000, 0.8); graphics.lineBetween(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
           if (ship.weapon.type === 'SPREAD') {
             const angle = Phaser.Math.Angle.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
             const dist = Phaser.Math.Distance.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
@@ -1270,16 +1321,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             graphics.lineBetween(ship.x, ship.y, p2.x, p2.y);
           }
         }
-
         if (ship.isSelected) {
-          const c = getHitboxCenter(ship);
-          graphics.lineStyle(2, 0x00ff00);
-          graphics.strokeCircle(c.x, c.y, ship.body.radius);
-          graphics.lineStyle(1, 0x00ff00, 0.15);
-          graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
+          const c = getHitboxCenter(ship); graphics.lineStyle(2, 0x00ff00); graphics.strokeCircle(c.x, c.y, ship.body.radius); graphics.lineStyle(1, 0x00ff00, 0.15); graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
         }
       });
-
       [...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
     }
 
