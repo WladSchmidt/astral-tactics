@@ -565,14 +565,24 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         } catch (e) { mapData = generateMapData(); }
       }
 
+      // ✅ ASTEROIDE: refreshBody ANTES, setCircle DEPOIS (e usa displayWidth)
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
-        const radius = obs.width * 0.10;
-        obs.body.setCircle(radius);
-        const offset = (obs.width - (radius * 2)) / 2;
-        obs.body.setOffset(offset, offset);
+
+        // 1) primeiro aplica o scale no body
         obs.refreshBody();
+
+        // 2) agora define um círculo MENOR (ajuste fino aqui)
+        const radius = obs.displayWidth * 0.20; // <-- diminui/aumenta aqui (0.18..0.28)
+        obs.body.setCircle(radius);
+
+        // 3) centraliza o círculo no sprite
+        const offsetX = (obs.displayWidth / 2) - radius;
+        const offsetY = (obs.displayHeight / 2) - radius;
+        obs.body.setOffset(offsetX, offsetY);
+
+        // ⚠️ NÃO chamar refreshBody depois disso
       });
 
       let mySquadData, enemySquadData;
@@ -618,9 +628,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       }
 
       // ✅ PROJÉTIL x NAVE:
-      // - Visual sempre
-      // - Dano REAL: apenas Host (online)
-      // - Guest: faz só "preview" na barra (não mata de verdade)
       scene.physics.add.overlap(projectileGroup, shipsGroup, (projectile, ship) => {
         if (!projectile.active || !ship.active) return;
 
@@ -651,9 +658,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       });
 
       // ✅ NAVE x NAVE:
-      // - Visual sempre
-      // - Dano REAL: apenas Host (online)
-      // - Guest: preview UI (sem matar de verdade)
       scene.physics.add.overlap(shipsGroup, shipsGroup, (a, b) => {
         if (a === b) return;
         if (!a.active || !b.active) return;
@@ -841,13 +845,29 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       [...playerSquad, ...enemySquad].forEach(s => { s.predictedHp = null; });
     }
 
-    function applyHpState(hpState) {
+    // ✅ FX sincronizado para morte confirmada (host e guest)
+    function playDeathFx(scene, ship) {
+      try { if (sfxExplosion) sfxExplosion.play(); } catch (e) { }
+      const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
+      scene.tweens.add({ targets: boom, scale: 3, alpha: 0, duration: 400, onComplete: () => boom.destroy() });
+      try { scene.cameras.main.shake(120, 0.01); } catch (e) { }
+    }
+
+    // ✅ applyHpState AGORA DISPARA SOM/EXPLOSÃO QUANDO CRUZA >0 -> <=0
+    function applyHpState(hpState, scene) {
       [...playerSquad, ...enemySquad].forEach(ship => {
         const v = hpState?.[ship.netId];
         if (v === undefined) return;
 
+        const prevHp = ship.hp;
+
         ship.hp = v;
         ship.predictedHp = null;
+
+        // ✅ morte confirmada agora (sincronizado nos dois)
+        if (prevHp > 0 && ship.hp <= 0) {
+          playDeathFx(scene, ship);
+        }
 
         if (ship.hp <= 0) {
           ship.body.enable = false;
@@ -921,10 +941,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         if (isHost) {
           await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), { hpState, at: Date.now() });
-          applyHpState(hpState); // garante consistência local do host também
+          applyHpState(hpState, scene); // ✅ agora com FX sincronizado
         } else {
           const data = await waitTurnResult(roomId, currentT);
-          applyHpState(data?.hpState);
+          applyHpState(data?.hpState, scene); // ✅ agora com FX sincronizado
         }
       }
 
@@ -1116,7 +1136,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       ship.setTint(0xff6666);
       scene.time.delayedCall(80, () => { if (ship.active) ship.clearTint(); });
 
-      // importante: NÃO desativa body, NÃO esconde nave
       if (selectedShip === ship) updateHUDInfo();
     }
 
