@@ -484,7 +484,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       backgroundColor: '#000000',
       parent: 'phaser-container',
       disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: false, gravity: { y: 0 }, fps: 60, fixedStep: true } },
+      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
