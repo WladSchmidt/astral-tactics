@@ -106,11 +106,47 @@ const TEXTS = {
   }
 };
 
-// --- DADOS DAS NAVES ---
+// --- DADOS DAS NAVES (CORRIGIDOS: HITBOX MENOR) ---
 const SHIP_STATS = {
-  FLUX: { id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', hitRadius: 150, hitOffset: { x: 170, y: 200 } },
-  VECTOR: { id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', hitRadius: 150, hitOffset: { x: 140, y: 180 } },
-  COLOSSUS: { id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', hitRadius: 155, hitOffset: { x: 150, y: 180 } }
+  FLUX: { 
+    id: 'FLUX', 
+    name: 'FLUX', 
+    descKey: 'DESC_FLUX', 
+    hp: 90, 
+    speed: 155, 
+    color: 0x00ffff, 
+    radius: 24, 
+    moveRange: 385, 
+    sprite: 'flux_img', 
+    hitRadius: 20, // Ajustado para bater com o visual
+    hitOffset: { x: 0, y: 0 } 
+  },
+  VECTOR: { 
+    id: 'VECTOR', 
+    name: 'VECTOR', 
+    descKey: 'DESC_VECTOR', 
+    hp: 120, 
+    speed: 110, 
+    color: 0x00ff00, 
+    radius: 28, 
+    moveRange: 310, 
+    sprite: 'vector_img', 
+    hitRadius: 25, 
+    hitOffset: { x: 0, y: 0 } 
+  },
+  COLOSSUS: { 
+    id: 'COLOSSUS', 
+    name: 'COLOSSUS', 
+    descKey: 'DESC_COLOSSUS', 
+    hp: 180, 
+    speed: 75, 
+    color: 0xffaa00, 
+    radius: 38, 
+    moveRange: 220, 
+    sprite: 'colossus_img', 
+    hitRadius: 32, 
+    hitOffset: { x: 0, y: 0 } 
+  }
 };
 
 const SHIP_IMAGES = { 'flux_img': 'assets/Flux.png', 'vector_img': 'assets/Vector.png', 'colossus_img': 'assets/Colossus.png' };
@@ -577,7 +613,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         } catch (e) { mapData = generateMapData(); }
       }
 
-      // ✅ ALTERAÇÃO: ASTEROIDE COM HITBOX JUSTO
+      // ✅ ASTEROIDE COM HITBOX JUSTO
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
@@ -633,7 +669,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       }
 
-      // ✅ MUDANÇA: APENAS VISUAL (SEM DANO LOCAL)
+      // ✅ FEEDBACK VISUAL (Texto + Flash) ATIVADO
       scene.physics.add.overlap(projectileGroup, shipsGroup, (projectile, ship) => {
         if (!projectile.active || !ship.active) return;
         if (projectile.ownerNetOwner === ship.netOwner) return;
@@ -642,6 +678,14 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
 
         projectile.destroy();
+
+        if (isTraining) {
+          takeDamage(scene, ship, projectile.damage, true);
+          return;
+        }
+
+        // Feedback visual imediato para todos (mas dano real só vem do server)
+        takeDamagePredicted(scene, ship, projectile.damage);
       });
 
       scene.physics.add.collider(projectileGroup, obstacleGroup, (projectile) => {
@@ -650,7 +694,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         projectile.destroy();
       });
 
-      // ✅ MUDANÇA: APENAS VISUAL (SEM DANO LOCAL)
+      // ✅ FEEDBACK VISUAL DE COLISÃO ATIVADO
       scene.physics.add.overlap(shipsGroup, shipsGroup, (a, b) => {
         if (a === b) return;
         if (!a.active || !b.active) return;
@@ -664,6 +708,16 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         a.hasCrashed = true; b.hasCrashed = true;
         showFloatText(scene, (a.x + b.x) / 2, (a.y + b.y) / 2, t('CRASH_LABEL'), '#ffaa00');
+
+        if (isTraining) {
+          takeDamage(scene, a, 20, true);
+          takeDamage(scene, b, 20, true);
+          return;
+        }
+
+        // Placebo visual
+        takeDamagePredicted(scene, a, 20);
+        takeDamagePredicted(scene, b, 20);
       });
 
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
@@ -707,7 +761,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
     // --- FUNÇÕES DETERMINÍSTICAS (RAYCASTING) ---
 
-    // ✅ Função matemática pura para ver se um raio acerta um círculo
     function rayCircleHit(ox, oy, dx, dy, cx, cy, r) {
       const fx = ox - cx;
       const fy = oy - cy;
@@ -730,13 +783,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       return t;
     }
 
-    // ✅ HOST calcula o resultado (Agora verifica Obstáculos também!)
     function computeHostTurnResult(scene, myData, enemyData) {
       const events = [];
       const allShips = [...playerSquad, ...enemySquad];
       const pos = {};
       
-      // Snapshot inicial
       allShips.forEach(s => {
         pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
       });
@@ -751,11 +802,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
       };
 
-      // Helper para checar obstáculos
       const getFirstHit = (ox, oy, dx, dy, targetSquad) => {
         let best = null;
 
-        // 1. Checa Naves Inimigas
         targetSquad.forEach(tgt => {
           if (!tgt.active) return;
           const t = rayCircleHit(ox, oy, dx, dy, tgt.x, tgt.y, (tgt.body?.radius ?? 20));
@@ -764,9 +813,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           }
         });
 
-        // 2. Checa Asteroides (BLOQUEIO DE TIRO)
         obstacleGroup.getChildren().forEach(obs => {
-           // obs.body.radius deve estar correto pelo setCircle anterior
            const t = rayCircleHit(ox, oy, dx, dy, obs.x, obs.y, obs.body.radius);
            if (t !== null && t > 0) {
               if (!best || t < best.t) best = { t, type: 'OBSTACLE', target: obs };
@@ -790,14 +837,12 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           const dx = Math.cos(ang);
           const dy = Math.sin(ang);
 
-          // Quem são os inimigos desse atirador?
           const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
             ? enemySquad : playerSquad;
 
           const hit = getFirstHit(shooterShip.x, shooterShip.y, dx, dy, enemies);
 
           if (hit) {
-             // Limite de alcance para não atirar infinito
              if (hit.t > 1400) return;
 
              const hitX = shooterShip.x + dx * hit.t;
@@ -806,13 +851,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
              if (hit.type === 'SHIP') {
                 applyDmg(hit.target.netId, weapon.damage, hitX, hitY);
              } 
-             // Se for OBSTACLE, o tiro bate e para (não dá dano em ninguém)
              events.push({ type: 'HITFX', x: hitX, y: hitY });
           }
         });
       };
 
-      // Processa planos
       playerSquad.forEach(s => {
         const p = myData.find(m => m.index === s.squadIndex);
         if (p?.attack) processShooter(s, p.attack);
@@ -822,7 +865,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (p?.attack) processShooter(s, p.attack);
       });
 
-      // Checagem de Colisão (Crash)
       const plannedPos = {};
       allShips.forEach(s => {
         const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
@@ -852,7 +894,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       });
 
-      // Gera estado final
       const finalHpState = {};
       allShips.forEach(s => {
         const st = pos[s.netId];
@@ -1062,7 +1103,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
       });
 
-      // ✅ MUDANÇA: Lógica Determinística
       let hostResult = null;
       if (!isTraining && isHost) {
         const currentT = turnRefValue.current;
@@ -1229,7 +1269,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     }
 
     function takeDamage(scene, ship, dmg, allowKill) {
-      // Usado apenas no modo Treino local
       ship.hp -= dmg;
       showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
       if (ship.hp <= 0 && allowKill) {
@@ -1245,8 +1284,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       }
     }
 
+    // ✅ APENAS VISUAL (Placebo)
     function takeDamagePredicted(scene, ship, dmg) {
-      // Visual only
       showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff6666');
       ship.setTint(0xff6666);
       scene.time.delayedCall(80, () => { if (ship.active) ship.clearTint(); });
