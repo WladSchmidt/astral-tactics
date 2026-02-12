@@ -112,17 +112,17 @@ const TEXTS = {
 const SHIP_STATS = {
   FLUX: { 
     id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
-    hitRadius: 130,
+    hitRadius: 30,
     hitOffset: { x: 170, y: 200 } 
   },
   VECTOR: { 
     id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
-    hitRadius: 140, 
+    hitRadius: 40, 
     hitOffset: { x: 140, y: 180 } 
   },
   COLOSSUS: { 
     id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
-    hitRadius: 150, 
+    hitRadius: 50, 
     hitOffset: { x: 150, y: 180 } 
   }
 };
