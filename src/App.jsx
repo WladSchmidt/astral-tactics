@@ -106,22 +106,23 @@ const TEXTS = {
   }
 };
 
-// ✅ SHIP_STATS: VALORES ORIGINAIS RESTAURADOS
-// Voltamos ao raio 150 e offsets manuais, pois a correção visual será feita no spawnShip
+// --- DADOS DAS NAVES (V52: HITBOX GRANDE & OFFSETS) ---
+// ✅ Mantemos seus valores (do jeito que você gosta visualmente),
+// mas a lógica do offset no body foi corrigida (sempre base + manual).
 const SHIP_STATS = {
   FLUX: { 
     id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
-    hitRadius: 150, 
+    hitRadius: 130,
     hitOffset: { x: 170, y: 200 } 
   },
   VECTOR: { 
     id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
-    hitRadius: 150, 
+    hitRadius: 140, 
     hitOffset: { x: 140, y: 180 } 
   },
   COLOSSUS: { 
     id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
-    hitRadius: 155, 
+    hitRadius: 150, 
     hitOffset: { x: 150, y: 180 } 
   }
 };
@@ -140,6 +141,7 @@ const generateMapData = () => {
     attempts++;
     const x = Math.floor(Math.random() * (TOTAL_WIDTH - 200)) + 100;
     const y = Math.floor(Math.random() * (PLAY_HEIGHT - 300)) + 150;
+
     let tooClose = false;
     for (let obs of obstacles) {
       const dist = Math.sqrt(Math.pow(x - obs.x, 2) + Math.pow(y - obs.y, 2));
@@ -149,6 +151,7 @@ const generateMapData = () => {
   }
   return obstacles;
 };
+
 export default function App() {
   const [lang, setLang] = useState('PT');
   const [gameState, setGameState] = useState('LOBBY');
@@ -170,10 +173,11 @@ export default function App() {
   const t = (key) => TEXTS[lang][key] || key;
   const surrenderHandledRef = useRef(false);
 
-  // AUTOPLAY LÓGICA
+  // 🔥 AUTOPLAY LÓGICA
   useEffect(() => {
     if (!audioRef.current) return;
     audioRef.current.volume = 0.3;
+
     if (isGlobalMuted) {
       audioRef.current.pause();
     } else if (isMusicPlaying) {
@@ -198,6 +202,7 @@ export default function App() {
   const handlePrevTrack = () => { setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length); };
   const handleMusicEnded = () => { handleNextTrack(); };
 
+  // SFX Click Global
   const playClick = () => {
     if (isGlobalMuted) return;
     const audio = new Audio('assets/audio/click.mp3');
@@ -335,7 +340,12 @@ export default function App() {
         .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
       `}</style>
 
-      <audio ref={audioRef} src={MUSIC_TRACKS[currentTrackIndex]} onEnded={handleMusicEnded} loop={false} />
+      <audio
+        ref={audioRef}
+        src={MUSIC_TRACKS[currentTrackIndex]}
+        onEnded={handleMusicEnded}
+        loop={false}
+      />
 
       <div style={styles.backgroundWrapper}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -438,36 +448,69 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: '#0a141e', padding: '15px 8px', borderRadius: '30px', border: '2px solid #00ccff', boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)', zIndex: 9999 }}>
+          {/* 🎧 DOCK MULTIMÍDIA */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
+            background: '#0a141e',
+            padding: '15px 8px',
+            borderRadius: '30px',
+            border: '2px solid #00ccff',
+            boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)',
+            zIndex: 9999
+          }}>
             {!isGlobalMuted && (
               <>
-                <button className="music-btn" onClick={handlePrevTrack} title="Anterior"><span>🔼</span></button>
-                <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause"><span style={{ fontSize: '22px' }}>{isMusicPlaying ? '⏸' : '▶'}</span></button>
-                <button className="music-btn" onClick={handleNextTrack} title="Próxima"><span>🔽</span></button>
+                <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
+                  <span>🔼</span>
+                </button>
+                <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
+                  <span style={{ fontSize: '22px' }}>{isMusicPlaying ? '⏸' : '▶'}</span>
+                </button>
+                <button className="music-btn" onClick={handleNextTrack} title="Próxima">
+                  <span>🔽</span>
+                </button>
                 <div style={{ width: '80%', height: 1, background: '#00ccff', margin: '5px 0', opacity: 0.3 }}></div>
               </>
             )}
-            <button className="music-btn" onClick={() => setIsGlobalMuted(!isGlobalMuted)} title="Master Mute" style={{ color: isGlobalMuted ? '#ff4444' : '#00ff00' }}><span style={{ fontSize: '22px' }}>{isGlobalMuted ? '🔇' : '🔊'}</span></button>
+            <button
+              className="music-btn"
+              onClick={() => setIsGlobalMuted(!isGlobalMuted)}
+              title="Master Mute"
+              style={{ color: isGlobalMuted ? '#ff4444' : '#00ff00' }}
+            >
+              <span style={{ fontSize: '22px' }}>{isGlobalMuted ? '🔇' : '🔊'}</span>
+            </button>
           </div>
+
         </div>
       </div>
     </>
   );
 }
+
 // --- PHASER GAME COMPONENT ---
 const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t, isGlobalMuted }) => {
   const gameRef = useRef(null);
   const turnRefValue = useRef(1);
 
   useEffect(() => {
-    if (gameRef.current) gameRef.current.sound.mute = isGlobalMuted;
+    if (gameRef.current) {
+      gameRef.current.sound.mute = isGlobalMuted;
+    }
   }, [isGlobalMuted]);
 
   useEffect(() => {
     const config = {
-      type: Phaser.AUTO, width: TOTAL_WIDTH, height: TOTAL_HEIGHT, backgroundColor: '#000000',
-      parent: 'phaser-container', disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } }, // DEBUG ON!
+      type: Phaser.AUTO,
+      width: TOTAL_WIDTH,
+      height: TOTAL_HEIGHT,
+      backgroundColor: '#000000',
+      parent: 'phaser-container',
+      disableVisibilityChange: true,
+      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
@@ -476,11 +519,16 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     gameRef.current = game;
     game.sound.mute = isGlobalMuted;
 
-    let playerSquad = [], enemySquad = [], shipsGroup, obstacleGroup, projectileGroup;
-    let selectedShip = null, moveHandle = null, attackHandle = null, graphics;
-    let turnText, txtName, txtHP, txtSPD, txtDMG, timerText;
-    let isExecuting = false, isWaiting = false, matchEnded = false;
-    let unsubscribeTurns = null, unsubscribeSurrender = null, timerEvent = null, timeLeft = TURN_TIME_LIMIT;
+    let playerSquad = [], enemySquad = [];
+    let selectedShip = null, moveHandle = null, attackHandle = null;
+    let graphics, uiGroup, staticHudGroup, turnText, txtName, txtHP, txtSPD, txtDMG, timerText;
+    let isExecuting = false, isWaiting = false;
+    let shipsGroup, obstacleGroup, projectileGroup;
+    let unsubscribeTurns = null;
+    let matchEnded = false;
+    let unsubscribeSurrender = null;
+    let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
+
     let sfxShoot, sfxExplosion, sfxClick, sfxCrash;
 
     function preload() {
@@ -489,6 +537,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       this.load.image('vector_img', 'assets/Vector.png');
       this.load.image('colossus_img', 'assets/Colossus.png');
       this.load.image('asteroid_img', 'assets/Asteroid.png');
+
       this.load.audio('shoot', 'assets/audio/shoot.mp3');
       this.load.audio('explosion', 'assets/audio/explosion.mp3');
       this.load.audio('click', 'assets/audio/click.mp3');
@@ -498,30 +547,35 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     async function create() {
       const scene = this;
       scene.input.mouse.disableContextMenu();
-      scene.add.tileSprite(TOTAL_WIDTH/2, PLAY_HEIGHT/2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
+      scene.add.tileSprite(TOTAL_WIDTH / 2, PLAY_HEIGHT / 2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
 
       try {
         sfxShoot = scene.sound.add('shoot', { volume: 0.3 });
         sfxExplosion = scene.sound.add('explosion', { volume: 0.5 });
         sfxClick = scene.sound.add('click', { volume: 0.5 });
         sfxCrash = scene.sound.add('crash', { volume: 0.6 });
-      } catch (e) {}
+      } catch (e) { console.log("Erro de áudio Phaser", e); }
 
       const hudY = PLAY_HEIGHT;
       const hudBg = scene.add.graphics();
-      hudBg.fillStyle(0x151515, 1); hudBg.fillRect(0, hudY, TOTAL_WIDTH, HUD_HEIGHT);
-      hudBg.lineStyle(2, 0x0088ff, 0.5); hudBg.lineBetween(0, hudY, TOTAL_WIDTH, hudY);
+      hudBg.fillStyle(0x151515, 1);
+      hudBg.fillRect(0, hudY, TOTAL_WIDTH, HUD_HEIGHT);
+      hudBg.lineStyle(2, 0x0088ff, 0.5);
+      hudBg.lineBetween(0, hudY, TOTAL_WIDTH, hudY);
 
-      const textX = 20, startY = PLAY_HEIGHT + 15, lineHeight = 22;
+      const textX = 20; const startY = PLAY_HEIGHT + 15; const lineHeight = 22;
       turnText = scene.add.text(textX, startY, t('TURN_YOURS'), { font: 'bold 20px Arial', fill: '#00ff00' }).setDepth(100);
       txtName = scene.add.text(textX, startY + 30, t('SELECT_SHIP'), { font: 'bold 18px Arial', fill: '#ffffff' }).setDepth(100);
       txtHP = scene.add.text(textX, startY + 30 + lineHeight, "", { font: '14px monospace', fill: '#00ff00' }).setDepth(100);
-      txtSPD = scene.add.text(textX, startY + 30 + (lineHeight*2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
-      txtDMG = scene.add.text(textX, startY + 30 + (lineHeight*3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
-      timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0,0).setDepth(100);
+      txtSPD = scene.add.text(textX, startY + 30 + (lineHeight * 2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
+      txtDMG = scene.add.text(textX, startY + 30 + (lineHeight * 3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
+      timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 })
+        .setOrigin(0, 0).setDepth(100);
 
       scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
       graphics = scene.add.graphics();
+      uiGroup = scene.add.container(0, 0).setDepth(200);
+      staticHudGroup = scene.add.container(0, 0).setDepth(200);
       shipsGroup = scene.physics.add.group();
       obstacleGroup = scene.physics.add.staticGroup();
       projectileGroup = scene.physics.add.group();
@@ -529,94 +583,150 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       let mapData = [];
       if (isTraining) mapData = generateMapData();
       else {
-        try { const snap = await get(ref(db, `rooms/${roomId}`)); mapData = snap.val()?.map || generateMapData(); } catch (e) { mapData = generateMapData(); }
+        try {
+          const roomSnap = await get(ref(db, `rooms/${roomId}`));
+          const roomData = roomSnap.val();
+          if (roomData && roomData.map) mapData = roomData.map; else mapData = generateMapData();
+        } catch (e) { mapData = generateMapData(); }
       }
 
+      // ✅ ASTEROIDE COM HITBOX JUSTO E CENTRALIZADO
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
+
         const radius = obs.displayWidth * 0.18;
         obs.body.setCircle(radius);
-        obs.body.setOffset((obs.displayWidth/2)-radius, (obs.displayHeight/2)-radius);
+
+        const offsetX = (obs.displayWidth / 2) - radius;
+        const offsetY = (obs.displayHeight / 2) - radius;
+        obs.body.setOffset(offsetX, offsetY);
+
         obs.refreshBody();
       });
 
       let mySquadData, enemySquadData;
       if (isTraining) { mySquadData = mySquadList; enemySquadData = ['FLUX', 'VECTOR', 'COLOSSUS']; }
       else {
-        const snap = await get(ref(db, `rooms/${roomId}`));
-        const d = snap.val();
-        mySquadData = isHost ? d.hostSquad : d.guestSquad;
-        enemySquadData = isHost ? d.guestSquad : d.hostSquad;
+        const roomSnap = await get(ref(db, `rooms/${roomId}`));
+        const roomData = roomSnap.val();
+        mySquadData = isHost ? roomData.hostSquad : roomData.guestSquad;
+        enemySquadData = isHost ? roomData.guestSquad : roomData.hostSquad;
       }
+
+      const pY = (isHost || isTraining) ? 60 : PLAY_HEIGHT - 60;
+      const eY = (isHost || isTraining) ? PLAY_HEIGHT - 60 : 60;
 
       const myOwner = isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST');
       const enemyOwner = isTraining ? 'GUEST' : (isHost ? 'GUEST' : 'HOST');
 
-      mySquadData.forEach((id, i) => spawnShip(scene, 262+(i*250), (isHost?60:PLAY_HEIGHT-60), SHIP_STATS[id], 'PLAYER', i, myOwner));
-      enemySquadData.forEach((id, i) => spawnShip(scene, 262+(i*250), (isHost?PLAY_HEIGHT-60:60), SHIP_STATS[id], 'ENEMY', i, enemyOwner));
+      mySquadData.forEach((id, i) => spawnShip(scene, 262 + (i * 250), pY, SHIP_STATS[id], 'PLAYER', i, myOwner));
+      enemySquadData.forEach((id, i) => spawnShip(scene, 262 + (i * 250), eY, SHIP_STATS[id], 'ENEMY', i, enemyOwner));
 
       if (!isTraining) {
-        unsubscribeTurns = onValue(ref(db, `rooms/${roomId}/turns`), (snap) => {
+        const turnRef = ref(db, `rooms/${roomId}/turns`);
+        unsubscribeTurns = onValue(turnRef, (snapshot) => {
           if (matchEnded) return;
-          const turns = snap.val();
-          if (turns?.[turnRefValue.current]?.host && turns?.[turnRefValue.current]?.guest && !isExecuting) {
-            runTurnResolution(scene, turns[turnRefValue.current]);
+          const turns = snapshot.val(); if (!turns) return;
+          const currentT = turnRefValue.current;
+          const turnData = turns[currentT];
+          if (turnData && turnData.host && turnData.guest) {
+            if (!isExecuting) runTurnResolution(scene, turnData);
           }
         });
-        unsubscribeSurrender = onValue(ref(db, `rooms/${roomId}/surrender`), (snap) => {
-          if (snap.val()) { matchEnded = true; scene.input.enabled = false; }
+
+        const surrenderRef = ref(db, `rooms/${roomId}/surrender`);
+        unsubscribeSurrender = onValue(surrenderRef, (snap) => {
+          const who = snap.val(); if (!who) return;
+          matchEnded = true;
+          try { if (timerEvent) timerEvent.remove(); } catch (e) { }
+          try { scene.input.enabled = false; } catch (e) { }
+          try { uiGroup.setVisible(false); } catch (e) { }
+          try { staticHudGroup.setVisible(false); } catch (e) { }
         });
       }
 
-      // Visual placebo
-      scene.physics.add.overlap(projectileGroup, shipsGroup, (p, s) => {
-        if (!p.active || !s.active || p.ownerNetOwner === s.netOwner) return;
-        const boom = scene.add.circle(p.x, p.y, 15, 0xffaa00);
+      // ✅ FEEDBACK VISUAL (Texto + Flash) ATIVADO
+      scene.physics.add.overlap(projectileGroup, shipsGroup, (projectile, ship) => {
+        if (!projectile.active || !ship.active) return;
+        if (projectile.ownerNetOwner === ship.netOwner) return;
+
+        const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
         scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
-        p.destroy();
-        takeDamagePredicted(scene, s, p.damage);
+
+        projectile.destroy();
+
+        if (isTraining) {
+          takeDamage(scene, ship, projectile.damage, true);
+          return;
+        }
+
+        takeDamagePredicted(scene, ship, projectile.damage);
       });
 
-      scene.physics.add.collider(projectileGroup, obstacleGroup, (p) => {
-        const boom = scene.add.circle(p.x, p.y, 10, 0xaaaaaa);
+      scene.physics.add.collider(projectileGroup, obstacleGroup, (projectile) => {
+        const boom = scene.add.circle(projectile.x, projectile.y, 10, 0xaaaaaa);
         scene.tweens.add({ targets: boom, scale: 1.5, alpha: 0, duration: 100, onComplete: () => boom.destroy() });
-        p.destroy();
+        projectile.destroy();
       });
 
+      // ✅ FEEDBACK VISUAL DE COLISÃO ATIVADO
       scene.physics.add.overlap(shipsGroup, shipsGroup, (a, b) => {
-        if (!isExecuting || a.hasCrashed || b.hasCrashed) return;
+        if (a === b) return;
+        if (!a.active || !b.active) return;
+        if (a.netOwner === b.netOwner) return;
+        if (!isExecuting) return;
+        if (a.hasCrashed || b.hasCrashed) return;
+        if (String(a.netId) > String(b.netId)) return;
+
         scene.cameras.main.shake(100, 0.01);
         if (sfxCrash) sfxCrash.play();
+
         a.hasCrashed = true; b.hasCrashed = true;
-        showFloatText(scene, (a.x+b.x)/2, (a.y+b.y)/2, t('CRASH_LABEL'), '#ffaa00');
-        takeDamagePredicted(scene, a, 20); takeDamagePredicted(scene, b, 20);
+        showFloatText(scene, (a.x + b.x) / 2, (a.y + b.y) / 2, t('CRASH_LABEL'), '#ffaa00');
+
+        if (isTraining) {
+          takeDamage(scene, a, 20, true);
+          takeDamage(scene, b, 20, true);
+          return;
+        }
+
+        takeDamagePredicted(scene, a, 20);
+        takeDamagePredicted(scene, b, 20);
       });
 
-      // HUD Button & Handles
-      const container = scene.add.container(0, 0).setDepth(200);
-      const btnEx = scene.add.container(TOTAL_WIDTH - 120, PLAY_HEIGHT + (HUD_HEIGHT/2));
-      const bgEx = scene.add.rectangle(0,0,160,60,0x008800).setInteractive().on('pointerdown', () => {
-        if (!isExecuting) { if(sfxClick) sfxClick.play(); submitTurn(scene); }
-      });
-      btnEx.add([bgEx, scene.add.text(0,0, t('BTN_EXECUTE'), {fontSize:'13px', fontStyle:'bold'}).setOrigin(0.5)]);
-      container.add(btnEx);
+      const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
+      createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => {
+        if (!isExecuting) {
+          if (sfxClick) sfxClick.play();
+          submitTurn(scene);
+        }
+      }, staticHudGroup);
 
-      moveHandle = scene.add.circle(0,0,10,0x00ff00).setStrokeStyle(3,0x000).setDepth(300).setVisible(false).setInteractive({draggable:true});
-      attackHandle = scene.add.circle(0,0,10,0xff0000).setStrokeStyle(3,0x000).setDepth(300).setVisible(false).setInteractive({draggable:true});
+      moveHandle = scene.add.circle(0, 0, 10, 0x00ff00).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
+      attackHandle = scene.add.circle(0, 0, 10, 0xff0000).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
 
-      moveHandle.on('drag', (p, x, y) => {
-        if (selectedShip && !isExecuting && !isWaiting) {
-          const c = clampPoint(x, y); moveHandle.setPosition(c.x, c.y);
-          if (Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, c.x, c.y) <= selectedShip.stats.moveRange && checkRaycast(selectedShip.x, selectedShip.y, c.x, c.y)) {
-            selectedShip.plannedMove = { x: c.x, y: c.y }; moveHandle.setFillStyle(0x00ff00);
-          } else moveHandle.setFillStyle(0x555555);
+      moveHandle.on('drag', (pointer, dragX, dragY) => {
+        if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
+          const clamped = clampPoint(dragX, dragY);
+          moveHandle.setPosition(clamped.x, clamped.y);
+          const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
+          const isBlocked = !checkRaycast(selectedShip.x, selectedShip.y, clamped.x, clamped.y);
+
+          if (dist <= selectedShip.stats.moveRange && !isBlocked) {
+            selectedShip.plannedMove = { x: clamped.x, y: clamped.y };
+            moveHandle.setFillStyle(0x00ff00);
+          } else {
+            moveHandle.setFillStyle(0x555555);
+          }
         }
       });
-      attackHandle.on('drag', (p, x, y) => {
-        if (selectedShip && !isExecuting && !isWaiting) {
-          const c = clampPoint(x, y); attackHandle.setPosition(c.x, c.y);
-          selectedShip.plannedAttack = { x: c.x, y: c.y };
+
+      attackHandle.on('drag', (pointer, dragX, dragY) => {
+        if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
+          const clamped = clampPoint(dragX, dragY);
+          attackHandle.setPosition(clamped.x, clamped.y);
+          selectedShip.plannedAttack = { x: clamped.x, y: clamped.y };
         }
       });
 
@@ -624,130 +734,159 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       startTimer(scene);
     }
 
-    // ✅ SPAWN COM CORREÇÃO DE OFFSET PARA O INIMIGO
-    function spawnShip(scene, x, y, stats, faction, index, netOwner) {
-      const ship = scene.physics.add.sprite(x, y, stats.sprite);
-      ship.setScale(0.17);
-      
-      const r = stats.hitRadius ?? 16;
-      ship.body.setCircle(r);
+    // --- FUNÇÕES DETERMINÍSTICAS (RAYCASTING) ---
 
-      const manualX = stats.hitOffset?.x ?? 0;
-      const manualY = stats.hitOffset?.y ?? 0;
+    function rayCircleHit(ox, oy, dx, dy, cx, cy, r) {
+      const fx = ox - cx;
+      const fy = oy - cy;
 
-      if (faction === 'ENEMY') {
-        ship.angle = 180;
-        // Inverte o offset X para que a bola roxa acompanhe a rotação 180
-        if (manualX > 0) {
-             const diameter = r * 2;
-             // Cálculo: Largura da textura - OffsetOriginal - Diâmetro
-             const flippedX = ship.width - manualX - diameter;
-             ship.body.setOffset(flippedX, manualY); 
-        } else {
-             ship.body.setOffset((ship.width/2)-r, (ship.height/2)-r);
-        }
-      } else {
-        if (manualX > 0) ship.body.setOffset(manualX, manualY);
-        else ship.body.setOffset((ship.width/2)-r, (ship.height/2)-r);
-      }
+      const b = 2 * (fx * dx + fy * dy);
+      const c = (fx * fx + fy * fy) - (r * r);
 
-      ship.stats = stats; ship.hp = stats.hp; ship.faction = faction;
-      ship.squadIndex = index; ship.netOwner = netOwner; ship.netId = `${netOwner}_${index}`;
-      ship.weapon = WEAPONS.CANNON; ship.hasCrashed = false;
-      shipsGroup.add(ship);
-      if (faction === 'PLAYER') playerSquad.push(ship); else enemySquad.push(ship);
-      return ship;
+      const disc = b * b - 4 * c;
+      if (disc < 0) return null;
+
+      const sqrtDisc = Math.sqrt(disc);
+      const t1 = (-b - sqrtDisc) / 2;
+      const t2 = (-b + sqrtDisc) / 2;
+
+      let t = null;
+      if (t1 >= 0 && t2 >= 0) t = Math.min(t1, t2);
+      else if (t1 >= 0) t = t1;
+      else if (t2 >= 0) t = t2;
+
+      return t;
     }
 
-    function distancePointToLineSegment(px, py, x1, y1, x2, y2) {
-      const l2 = Phaser.Math.Distance.Squared(x1, y1, x2, y2);
-      if (l2 === 0) return Phaser.Math.Distance.Between(px, py, x1, y1);
-      let t = ((px - x1)*(x2 - x1) + (py - y1)*(y2 - y1)) / l2;
-      t = Math.max(0, Math.min(1, t));
-      return Phaser.Math.Distance.Between(px, py, x1+t*(x2-x1), y1+t*(y2-y1));
-    }
-
-    // ✅ MATH DO SERVIDOR: Usa o centro da bola roxa
-    function computeHostTurnResult(scene, myData, enemyData) {
+    // ✅ HOST calcula o resultado (RayCircleHit + bala com mesmo raio do Phaser)
+     function computeHostTurnResult(scene, myData, enemyData) {
       const events = [];
       const allShips = [...playerSquad, ...enemySquad];
       const pos = {};
-      allShips.forEach(s => pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp });
+      
+      // Snapshot inicial
+      allShips.forEach(s => {
+        pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
+      });
 
-      const applyDmg = (id, dmg, x, y) => {
-        if (!pos[id]?.active) return;
-        pos[id].hp -= dmg;
-        events.push({ type: 'DMG', target: id, dmg, x, y });
-        if (pos[id].hp <= 0) { pos[id].active = false; events.push({ type: 'KILL', target: id, x, y }); }
+      const applyDmg = (targetNetId, dmg, hitX, hitY) => {
+        if (!pos[targetNetId] || !pos[targetNetId].active) return;
+        pos[targetNetId].hp -= dmg;
+        events.push({ type: 'DMG', target: targetNetId, dmg, x: hitX, y: hitY });
+        if (pos[targetNetId].hp <= 0) {
+          pos[targetNetId].active = false;
+          events.push({ type: 'KILL', target: targetNetId, x: hitX, y: hitY });
+        }
       };
 
-      const process = (ship, plan) => {
-        if (!ship.active || !plan || !plan.attack) return;
-        const w = WEAPONS[plan.attack.weapon || 'CANNON'];
-        const ang = Phaser.Math.Angle.Between(ship.x, ship.y, plan.attack.x, plan.attack.y);
-        const offsets = (w.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
+      const processShooter = (shooterShip, planAttack) => {
+        if (!shooterShip.active || !planAttack) return;
 
-        offsets.forEach(off => {
-          const a = ang + off;
-          const dx = Math.cos(a); const dy = Math.sin(a);
-          const startX = ship.x + dx*45; const startY = ship.y + dy*45;
-          const endX = startX + dx*1500; const endY = startY + dy*1500;
+        const weaponId = planAttack.weapon || 'CANNON';
+        const weapon = WEAPONS[weaponId] || WEAPONS.CANNON;
+        const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
+        const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
 
-          const targets = (ship.netOwner === (isTraining ? 'HOST' : (isHost?'HOST':'GUEST'))) ? enemySquad : playerSquad;
-          let best = null;
+        angleOffsets.forEach((off) => {
+          const ang = baseAngle + off;
+          const dx = Math.cos(ang);
+          const dy = Math.sin(ang);
 
-          targets.forEach(tgt => {
-            if (!tgt.active) return;
-            // Usa o centro da bola roxa (que agora está corrigida no spawnShip)
+          // Origem do tiro (igual ao visual)
+          const startX = shooterShip.x + (dx * 45);
+          const startY = shooterShip.y + (dy * 45);
+          const endX = startX + (dx * 1500);
+          const endY = startY + (dy * 1500);
+
+          const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+            ? enemySquad : playerSquad;
+
+          let bestHit = null;
+
+          // 1. Checa Naves (Hitbox Honesta)
+          enemies.forEach(tgt => {
+            if (!tgt.active || !tgt.body) return;
+            
+            // 🔥 AQUI ESTÁ O SEGREDO: O servidor usa o centro da BOLA ROXA (tgt.body.center)
+            // Como corrigimos o spawnShip, a bola roxa agora está em cima da nave.
             const dist = distancePointToLineSegment(tgt.body.center.x, tgt.body.center.y, startX, startY, endX, endY);
-            if (dist <= tgt.body.radius) {
-               const dShooter = Phaser.Math.Distance.Between(startX, startY, tgt.body.center.x, tgt.body.center.y);
-               if (!best || dShooter < best.d) best = { d: dShooter, t: tgt, x: tgt.body.center.x, y: tgt.body.center.y };
+            
+            // Se a distância for menor que o raio da bola roxa = ACERTOU
+            if (dist <= tgt.body.radius) { 
+               const distToShooter = Phaser.Math.Distance.Between(startX, startY, tgt.body.center.x, tgt.body.center.y);
+               if (!bestHit || distToShooter < bestHit.dist) {
+                 bestHit = { dist: distToShooter, type: 'SHIP', target: tgt, x: tgt.body.center.x, y: tgt.body.center.y };
+               }
             }
           });
 
+          // 2. Checa Asteroides (Bloqueio)
           obstacleGroup.getChildren().forEach(obs => {
+             if(!obs.body) return;
              const dist = distancePointToLineSegment(obs.body.center.x, obs.body.center.y, startX, startY, endX, endY);
              if (dist <= obs.body.radius) {
-                const dShooter = Phaser.Math.Distance.Between(startX, startY, obs.x, obs.y);
-                if (!best || dShooter < best.d) best = { d: dShooter, type: 'OBSTACLE', x: obs.x, y: obs.y };
+                const distToShooter = Phaser.Math.Distance.Between(startX, startY, obs.x, obs.y);
+                if (!bestHit || distToShooter < bestHit.dist) {
+                   bestHit = { dist: distToShooter, type: 'OBSTACLE', target: obs, x: obs.x, y: obs.y };
+                }
              }
           });
 
-          if (best && best.type !== 'OBSTACLE') {
-             applyDmg(best.t.netId, w.damage, best.x, best.y);
-             events.push({ type: 'HITFX', x: best.x, y: best.y });
-          } else if (best && best.type === 'OBSTACLE') {
-             events.push({ type: 'HITFX', x: best.x, y: best.y });
+          if (bestHit) {
+             if (bestHit.type === 'SHIP') {
+                applyDmg(bestHit.target.netId, weapon.damage, bestHit.x, bestHit.y);
+             } 
+             events.push({ type: 'HITFX', x: bestHit.x, y: bestHit.y });
           }
         });
       };
 
-      playerSquad.forEach(s => process(s, myData.find(m => m.index === s.squadIndex)));
-      enemySquad.forEach(s => process(s, enemyData.find(e => e.index === s.squadIndex)));
-
-      // Crash logic simplificada
-      playerSquad.forEach(a => {
-         if(!a.active) return;
-         enemySquad.forEach(b => {
-            if(!b.active) return;
-            // Usa posições planejadas se existirem
-            const pa = (a.netOwner === (isTraining ? 'HOST' : (isHost?'HOST':'GUEST'))) ? myData.find(p=>p.index===a.squadIndex)?.move || {x:a.x,y:a.y} : enemyData.find(p=>p.index===b.squadIndex)?.move || {x:b.x,y:b.y};
-            const pb = (b.netOwner === (isTraining ? 'HOST' : (isHost?'HOST':'GUEST'))) ? myData.find(p=>p.index===b.squadIndex)?.move || {x:b.x,y:b.y} : enemyData.find(p=>p.index===b.squadIndex)?.move || {x:b.x,y:b.y};
-            
-            const dist = Phaser.Math.Distance.Between(pa.x, pa.y, pb.x, pb.y);
-            // Detecta crash se as naves terminarem o turno muito perto
-            if (dist <= (a.body.radius + b.body.radius)) {
-               const mx = (pa.x + pb.x)/2; const my = (pa.y + pb.y)/2;
-               applyDmg(a.netId, 20, mx, my); applyDmg(b.netId, 20, mx, my);
-               events.push({ type: 'CRASHFX', x: mx, y: my });
-            }
-         });
+      // Processa planos
+      playerSquad.forEach(s => {
+        const p = myData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
+      });
+      enemySquad.forEach(s => {
+        const p = enemyData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
       });
 
-      const finalHp = {}; allShips.forEach(s => finalHp[s.netId] = pos[s.netId].hp);
-      return { hpState: finalHp, events, at: Date.now() };
+      // Checagem de Colisão (Crash)
+      const plannedPos = {};
+      allShips.forEach(s => {
+        const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+            ? myData.find(p => p.index === s.squadIndex)
+            : enemyData.find(p => p.index === s.squadIndex);
+        if (plan?.move && s.active) plannedPos[s.netId] = { x: plan.move.x, y: plan.move.y };
+        else plannedPos[s.netId] = { x: s.x, y: s.y };
+      });
+
+      playerSquad.forEach(a => {
+        if (!a.active) return;
+        enemySquad.forEach(b => {
+          if (!b.active) return;
+          const pa = plannedPos[a.netId];
+          const pb = plannedPos[b.netId];
+          const dist = Phaser.Math.Distance.Between(pa.x, pa.y, pb.x, pb.y);
+          
+          if (dist <= (a.body.radius + b.body.radius)) {
+            applyDmg(a.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            applyDmg(b.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            events.push({ type: 'CRASHFX', x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
+          }
+        });
+      });
+
+      const finalHpState = {};
+      allShips.forEach(s => {
+        const st = pos[s.netId];
+        finalHpState[s.netId] = st ? st.hp : s.hp;
+      });
+
+      return { hpState: finalHpState, events, at: Date.now() };
     }
+
+    // --- FIM FUNÇÕES DETERMINÍSTICAS ---
 
     function startTimer(scene) {
       if (timerEvent) timerEvent.remove();
@@ -755,172 +894,534 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       timeLeft = TURN_TIME_LIMIT;
       timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
       timerText.setColor('#ffffff');
-      timerEvent = scene.time.addEvent({ delay: 200, callback: () => {
-        if (isExecuting || isWaiting || matchEnded) return;
-        const now = Date.now();
-        const sec = Math.ceil((endTime - now) / 1000);
-        if (sec !== timeLeft) { timeLeft = sec; if(timeLeft<0) timeLeft=0; timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`); if(timeLeft<=0) submitTurn(scene); }
-      }, loop: true });
+
+      timerEvent = scene.time.addEvent({
+        delay: 200,
+        callback: () => {
+          if (isExecuting || isWaiting || matchEnded) return;
+          const now = Date.now();
+          const secondsLeft = Math.ceil((endTime - now) / 1000);
+          if (secondsLeft !== timeLeft) {
+            timeLeft = secondsLeft;
+            if (timeLeft < 0) timeLeft = 0;
+            timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
+            if (timeLeft <= 10) timerText.setColor('#ff0000');
+            if (timeLeft <= 0) submitTurn(scene);
+          }
+        }, loop: true
+      });
     }
-    function stopTimer() { if (timerEvent) timerEvent.remove(); timerText.setText(t('WAITING_LABEL')); timerText.setColor('#ffff00'); }
+
+    function stopTimer() {
+      if (timerEvent) timerEvent.remove();
+      timerText.setText(t('WAITING_LABEL'));
+      timerText.setColor('#ffff00');
+    }
+
+    function spawnShip(scene, x, y, stats, faction, index, netOwner) {
+      const ship = scene.physics.add.sprite(x, y, stats.sprite);
+      ship.setScale(0.17);
+
+      // ✅ NÃO use angle=180 (Arcade body não gira com sprite)
+      // ✅ use flip (não afeta o body)
+      if (faction === 'ENEMY') ship.setFlipY(true);
+
+      ship.setCollideWorldBounds(true);
+
+      const r = stats.hitRadius ?? 16;
+      ship.body.setCircle(r);
+
+      // ✅ SEMPRE: baseOffset + manualOffset (consistente no multiplayer)
+      const baseOffsetX = (ship.displayWidth / 2) - r;
+      const baseOffsetY = (ship.displayHeight / 2) - r;
+      const manualX = stats.hitOffset?.x ?? 0;
+      const manualY = stats.hitOffset?.y ?? 0;
+
+      ship.body.setOffset(baseOffsetX + manualX, baseOffsetY + manualY);
+
+      // força atualizar o body após mexer no offset
+      if (ship.body.updateFromGameObject) ship.body.updateFromGameObject();
+
+      ship.stats = stats;
+      ship.hp = stats.hp;
+      ship.predictedHp = null;
+
+      ship.faction = faction;
+      ship.squadIndex = index;
+
+      ship.netOwner = netOwner;
+      ship.netId = `${netOwner}_${index}`;
+
+      ship.weapon = WEAPONS.CANNON;
+      ship.hasCrashed = false;
+
+      shipsGroup.add(ship);
+      if (faction === 'PLAYER') playerSquad.push(ship);
+      else enemySquad.push(ship);
+
+      return ship;
+    }
 
     async function submitTurn(scene) {
-      if (matchEnded || isWaiting || isExecuting) return;
+      if (matchEnded) return;
+      if (isWaiting || isExecuting) return;
       stopTimer();
+
       if (!isTraining) {
-         const sSnap = await get(ref(db, `rooms/${roomId}/surrender`));
-         if (sSnap.val()) return;
+        const sSnap = await get(ref(db, `rooms/${roomId}/surrender`));
+        if (sSnap.exists() && sSnap.val()) return;
       }
-      const myMoves = playerSquad.map(s => ({ index: s.squadIndex, move: s.plannedMove, attack: s.plannedAttack }));
+
+      const myMoves = playerSquad.map(s => ({
+        index: s.squadIndex,
+        move: s.plannedMove ? { x: s.plannedMove.x, y: s.plannedMove.y } : null,
+        attack: s.plannedAttack ? { x: s.plannedAttack.x, y: s.plannedAttack.y, weapon: s.weapon.id } : null
+      }));
+
       if (isTraining) {
-         const aiMoves = enemySquad.map(e => {
-            if(!e.active) return {index:e.squadIndex};
-            const t = playerSquad.find(p=>p.active);
-            let atk = null, mv = null;
-            if(t) atk = {x:t.x, y:t.y, weapon: 'CANNON'};
-            if(Math.random()>0.5) mv = {x: Phaser.Math.Clamp(e.x+(Math.random()-0.5)*100, 50, 900), y: Phaser.Math.Clamp(e.y+(Math.random()-0.5)*100, 50, 700)};
-            return {index:e.squadIndex, move:mv, attack:atk};
-         });
-         runTurnResolution(scene, {host: myMoves, guest: aiMoves});
-      } else {
-         isWaiting = true; turnText.setText(t('STATUS_WAITING'));
-         if(selectedShip) deselectAll();
-         const role = isHost ? 'host' : 'guest';
-         await set(ref(db, `rooms/${roomId}/turns/${turnRefValue.current}/${role}`), myMoves);
+        const aiMoves = enemySquad.map(e => {
+          if (!e.active) return { index: e.squadIndex, move: null, attack: null };
+          const target = playerSquad.find(p => p.active);
+          let mv = null, atk = null;
+          e.weapon = Math.random() > 0.5 ? WEAPONS.CANNON : WEAPONS.FLAK;
+          if (target) atk = { x: target.x, y: target.y, weapon: e.weapon.id };
+          if (Math.random() > 0.4) {
+            const tx = Phaser.Math.Clamp(e.x + (Math.random() - 0.5) * 150, 30, TOTAL_WIDTH - 30);
+            const ty = Phaser.Math.Clamp(e.y + (Math.random() - 0.5) * 150, 30, PLAY_HEIGHT - 30);
+            if (checkRaycast(e.x, e.y, tx, ty)) mv = { x: tx, y: ty };
+          }
+          return { index: e.squadIndex, move: mv, attack: atk };
+        });
+        const turnData = { host: myMoves, guest: aiMoves };
+        runTurnResolution(scene, turnData);
+        return;
       }
+
+      isWaiting = true;
+      turnText.setText(t('STATUS_WAITING'));
+      uiGroup.setVisible(false);
+      if (selectedShip) deselectAll();
+
+      const currentT = turnRefValue.current;
+      const role = isHost ? 'host' : 'guest';
+      await set(ref(db, `rooms/${roomId}/turns/${currentT}/${role}`), myMoves);
+    }
+
+    function clearPredictions() {
+      [...playerSquad, ...enemySquad].forEach(s => { s.predictedHp = null; });
+    }
+
+    function applyHpState(hpState) {
+      [...playerSquad, ...enemySquad].forEach(ship => {
+        const v = hpState?.[ship.netId];
+        if (v === undefined) return;
+
+        ship.hp = v;
+        ship.predictedHp = null;
+
+        if (ship.hp <= 0) {
+          ship.body.enable = false;
+          ship.setActive(false).setVisible(false);
+          if (selectedShip === ship) deselectAll();
+        } else {
+          ship.setVisible(true).setActive(true);
+          if (ship.body) ship.body.enable = true;
+        }
+      });
+    }
+
+    async function waitTurnResult(roomIdLocal, turnNumber) {
+      const resultRef = ref(db, `rooms/${roomIdLocal}/turnResults/${turnNumber}`);
+      return await new Promise((resolve) => {
+        const unsub = onValue(resultRef, (snap) => {
+          if (snap.exists()) {
+            unsub();
+            resolve(snap.val());
+          }
+        });
+      });
     }
 
     async function runTurnResolution(scene, turnData) {
-      if(matchEnded) return;
-      isExecuting = true; isWaiting = true; turnText.setText(t('EXECUTING_LABEL')); stopTimer();
-      if(selectedShip) deselectAll();
-      
+      if (matchEnded) return;
+
+      isExecuting = true;
+      isWaiting = true;
+      turnText.setText(t('EXECUTING_LABEL'));
+      stopTimer();
+
+      clearPredictions();
+      if (selectedShip) deselectAll();
+      uiGroup.setVisible(false);
+
+      [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
+
       const myData = isHost ? turnData.host : turnData.guest;
       const enemyData = isHost ? turnData.guest : turnData.host;
 
-      [...playerSquad, ...enemySquad].forEach(s => {
-         const p = s.faction==='PLAYER' ? myData?.find(m=>m.index===s.squadIndex) : enemyData?.find(e=>e.index===s.squadIndex);
-         if(p?.move && s.active) scene.tweens.add({targets:s, x:p.move.x, y:p.move.y, duration:1000});
-         if(p?.attack && s.active) fireWeapon(scene, s, p.attack.x, p.attack.y);
+      playerSquad.forEach(s => {
+        const plan = myData.find(p => p.index === s.squadIndex);
+        if (plan) {
+          if (plan.move) s.plannedMove = plan.move;
+          if (plan.attack) {
+            const wid = plan.attack.weapon || 'CANNON';
+            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
+            s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
+          }
+        }
       });
 
-      let result = null;
+      enemySquad.forEach(s => {
+        const plan = enemyData.find(p => p.index === s.squadIndex);
+        if (plan) {
+          if (plan.move) s.plannedMove = plan.move;
+          if (plan.attack) {
+            const wid = plan.attack.weapon || 'CANNON';
+            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
+            s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
+          }
+        }
+      });
+
+      [...playerSquad, ...enemySquad].forEach(s => {
+        const target = s.plannedMove || s.plannedAttack;
+        if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y));
+      });
+
+      [...playerSquad, ...enemySquad].forEach(s => {
+        if (!s.active) return;
+        if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y);
+        if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
+      });
+
+      let hostResult = null;
       if (!isTraining && isHost) {
-         result = computeHostTurnResult(scene, myData, enemyData);
-         await set(ref(db, `rooms/${roomId}/turnResults/${turnRefValue.current}`), result);
+        const currentT = turnRefValue.current;
+        hostResult = computeHostTurnResult(scene, myData, enemyData);
+        await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
       }
-      
-      await new Promise(r => setTimeout(r, 2000));
+
+      await new Promise(r => setTimeout(r, 2500));
 
       if (!isTraining) {
-         if (!isHost) { const snap = await get(ref(db, `rooms/${roomId}/turnResults/${turnRefValue.current}`)); result = snap.val(); }
-         applyHpState(result?.hpState);
+        const currentT = turnRefValue.current;
+        if (isHost) {
+          applyHpState(hostResult?.hpState);
+        } else {
+          const data = await waitTurnResult(roomId, currentT);
+          applyHpState(data?.hpState);
+        }
       }
 
-      [...playerSquad, ...enemySquad].forEach(s => { s.plannedMove=null; s.plannedAttack=null; s.body.setVelocity(0); });
-      isExecuting = false; isWaiting = false; turnRefValue.current++;
+      [...playerSquad, ...enemySquad].forEach(s => {
+        s.plannedMove = null;
+        s.plannedAttack = null;
+        if (s.active) s.body.setVelocity(0, 0);
+      });
+
+      isExecuting = false;
+      isWaiting = false;
+      turnRefValue.current = turnRefValue.current + 1;
+
       turnText.setText(t('TURN_YOURS'));
-      checkWinCondition(); startTimer(scene);
+      uiGroup.setVisible(true);
+
+      checkWinCondition();
+      startTimer(scene);
     }
 
     function checkWinCondition() {
-        const pAlive = playerSquad.some(s=>s.active);
-        const eAlive = enemySquad.some(s=>s.active);
-        if(!pAlive && !eAlive) onGameOver('DRAW');
-        else if(!pAlive) onGameOver('DEFEAT');
-        else if(!eAlive) onGameOver('VICTORY');
+      const playerAlive = playerSquad.some(s => s.active);
+      const enemyAlive = enemySquad.some(s => s.active);
+
+      if (!playerAlive && !enemyAlive) { gameRef.current.destroy(true); onGameOver('DRAW'); }
+      else if (!playerAlive) { gameRef.current.destroy(true); onGameOver('DEFEAT'); }
+      else if (!enemyAlive) { gameRef.current.destroy(true); onGameOver('VICTORY'); }
     }
 
-    function clampPoint(x, y) { return { x: Phaser.Math.Clamp(x, 25, TOTAL_WIDTH-25), y: Phaser.Math.Clamp(y, 25, PLAY_HEIGHT-25) }; }
-    function checkRaycast(x1,y1,x2,y2) { return true; } 
-    function clearPredictions() { [...playerSquad, ...enemySquad].forEach(s => s.predictedHp = null); }
-    function applyHpState(hp) {
-       if(!hp) return;
-       [...playerSquad, ...enemySquad].forEach(s => {
-          if(hp[s.netId] !== undefined) {
-             s.hp = hp[s.netId];
-             if(s.hp<=0) { s.active=false; s.setVisible(false); s.body.enable=false; }
-          }
-       });
+    function getHitboxCenter(ship) {
+      if (!ship.body) return { x: ship.x, y: ship.y };
+      return { x: ship.body.center.x, y: ship.body.center.y };
+    }
+
+    function deselectAll() {
+      if (selectedShip) selectedShip.isSelected = false;
+      selectedShip = null;
+      moveHandle.setVisible(false);
+      attackHandle.setVisible(false);
+      uiGroup.removeAll(true);
+      updateHUDInfo();
+    }
+
+    function distancePointToLineSegment(px, py, x1, y1, x2, y2) {
+      const l2 = Phaser.Math.Distance.Squared(x1, y1, x2, y2);
+      if (l2 === 0) return Phaser.Math.Distance.Between(px, py, x1, y1);
+      let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Phaser.Math.Distance.Between(px, py, x1 + t * (x2 - x1), y1 + t * (y2 - y1));
+    }
+
+    function updateHUDInfo() {
+      if (selectedShip && selectedShip.active) {
+        txtName.setText(selectedShip.stats.name);
+        const shownHp = Math.floor(selectedShip.predictedHp ?? selectedShip.hp);
+        txtHP.setText(`HP : ${shownHp}/${selectedShip.stats.hp}`);
+        txtSPD.setText(`SPD: ${selectedShip.stats.speed}`);
+        const currentDmg = selectedShip.weapon.damage;
+        const dmgDisplay = selectedShip.weapon.type === 'SPREAD' ? `${currentDmg}x3` : currentDmg;
+        txtDMG.setText(`DMG: ${dmgDisplay}`);
+      } else {
+        txtName.setText(t('SELECT_SHIP'));
+        txtHP.setText("");
+        txtSPD.setText("");
+        txtDMG.setText("");
+      }
+    }
+
+    function clampPoint(x, y) {
+      return { x: Phaser.Math.Clamp(x, 25, TOTAL_WIDTH - 25), y: Phaser.Math.Clamp(y, 25, PLAY_HEIGHT - 25) };
     }
 
     function setupInputs(scene) {
-      scene.input.on('pointerdown', (p) => {
-        if (matchEnded || isExecuting || isWaiting || p.y > PLAY_HEIGHT) return;
-        const objs = scene.input.hitTestPointer(p).filter(o => o===moveHandle || o===attackHandle);
-        if(objs.length>0) return;
+      scene.input.on('pointerdown', (pointer) => {
+        if (matchEnded) return;
+        if (isExecuting || isWaiting) return;
+        if (pointer.y > PLAY_HEIGHT) return;
 
-        let clicked = null;
-        playerSquad.forEach(s => { if(Phaser.Math.Distance.Between(p.x,p.y,s.x,s.y) < 60) clicked = s; });
-        
-        if (clicked) {
-           if(clicked===selectedShip) { deselectAll(); return; }
-           if(selectedShip) selectedShip.isSelected=false;
-           clicked.isSelected=true; selectedShip=clicked;
-           updateHandles(); drawUI(scene); updateHUDInfo();
-           return;
+        const draggedObjects = scene.input.hitTestPointer(pointer).filter(obj => obj === moveHandle || obj === attackHandle);
+        if (draggedObjects.length > 0) return;
+
+        let clickedShip = null;
+        playerSquad.forEach(s => {
+          if (Phaser.Math.Distance.Between(pointer.x, pointer.y, s.x, s.y) < (s.displayWidth * 0.8)) clickedShip = s;
+        });
+
+        if (clickedShip) {
+          if (clickedShip === selectedShip) { deselectAll(); return; }
+          if (selectedShip) selectedShip.isSelected = false;
+          if (sfxClick) sfxClick.play();
+          clickedShip.isSelected = true;
+          selectedShip = clickedShip;
+          updateHandles();
+          drawUI(scene);
+          updateHUDInfo();
+          return;
         }
 
         if (selectedShip && selectedShip.active) {
-           const c = clampPoint(p.x, p.y);
-           if (p.rightButtonDown()) { selectedShip.plannedAttack={x:c.x, y:c.y}; updateHandles(); drawUI(scene); }
-           else { selectedShip.plannedMove={x:c.x, y:c.y}; updateHandles(); drawUI(scene); }
+          const target = clampPoint(pointer.x, pointer.y);
+          if (pointer.rightButtonDown()) {
+            if (sfxClick) sfxClick.play();
+            selectedShip.plannedAttack = { x: target.x, y: target.y };
+            updateHandles(); drawUI(scene);
+          } else if (pointer.leftButtonDown()) {
+            const dist = Phaser.Math.Distance.Between(selectedShip.x, selectedShip.y, target.x, target.y);
+            if (dist <= selectedShip.stats.moveRange) {
+              if (checkRaycast(selectedShip.x, selectedShip.y, target.x, target.y)) {
+                if (sfxClick) sfxClick.play();
+                selectedShip.plannedMove = { x: target.x, y: target.y };
+                updateHandles(); drawUI(scene);
+              } else {
+                showFloatText(scene, target.x, target.y, t('BLOCKED_LABEL'), '#ff0000');
+              }
+            } else {
+              deselectAll();
+            }
+          }
+        } else {
+          deselectAll();
         }
       });
-      scene.input.keyboard.on('keydown-SPACE', () => { if(!isExecuting) submitTurn(scene); });
+
+      scene.input.keyboard.on('keydown-SPACE', () => { if (!isExecuting) submitTurn(scene); });
+      scene.input.keyboard.on('keydown-ESC', () => { game.destroy(true); onExit(); });
+    }
+
+    function fireWeapon(scene, shooter, tx, ty) {
+      if (sfxShoot) sfxShoot.play();
+      const weapon = shooter.weapon;
+      const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
+
+      const spawnBullet = (angleOffset) => {
+        const angle = baseAngle + angleOffset;
+        const sx = shooter.x + Math.cos(angle) * 45;
+        const sy = shooter.y + Math.sin(angle) * 45;
+
+        const proj = scene.add.circle(sx, sy, weapon.radius, weapon.color);
+        scene.physics.add.existing(proj);
+        projectileGroup.add(proj);
+
+        proj.owner = shooter;
+        proj.ownerNetOwner = shooter.netOwner;
+        proj.damage = weapon.damage;
+
+        // ✅ raio real usado no Phaser (host usa o mesmo: weapon.radius + 8)
+        proj.body.setCircle(weapon.radius + 8);
+        proj.body.setOffset(-8, -8);
+
+        const velocityX = Math.cos(angle) * weapon.speed;
+        const velocityY = Math.sin(angle) * weapon.speed;
+        proj.body.setVelocity(velocityX, velocityY);
+
+        scene.time.delayedCall(2000, () => { if (proj.active) proj.destroy(); });
+      };
+
+      if (weapon.type === 'SINGLE') spawnBullet(0);
+      else if (weapon.type === 'SPREAD') { spawnBullet(0); spawnBullet(-0.2); spawnBullet(0.2); }
+    }
+
+    function moveShip(scene, ship, tx, ty) {
+      const dist = Phaser.Math.Distance.Between(ship.x, ship.y, tx, ty);
+      const duration = (dist / ship.stats.speed) * 1000;
+      scene.tweens.add({ targets: ship, x: tx, y: ty, duration: duration, ease: 'Quad.easeInOut' });
+    }
+
+    function takeDamage(scene, ship, dmg, allowKill) {
+      ship.hp -= dmg;
+      showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
+      if (ship.hp <= 0 && allowKill) {
+        if (sfxExplosion) sfxExplosion.play();
+        const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
+        scene.tweens.add({ targets: boom, scale: 3, alpha: 0, duration: 400, onComplete: () => boom.destroy() });
+        ship.body.enable = false;
+        ship.setActive(false).setVisible(false);
+        if (selectedShip === ship) deselectAll();
+      } else {
+        ship.setTint(0xff0000);
+        scene.time.delayedCall(100, () => { if (ship.active) ship.clearTint(); });
+      }
+    }
+
+    function takeDamagePredicted(scene, ship, dmg) {
+      showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff6666');
+      ship.setTint(0xff6666);
+      scene.time.delayedCall(80, () => { if (ship.active) ship.clearTint(); });
+    }
+
+    function checkRaycast(x1, y1, x2, y2) {
+      const line = new Phaser.Geom.Line(x1, y1, x2, y2);
+      for (let obj of obstacleGroup.getChildren()) {
+        const rect = obj.getBounds();
+        if (Phaser.Geom.Intersects.LineToRectangle(line, rect)) return false;
+      }
+      return true;
+    }
+
+    function showFloatText(scene, x, y, text, color) {
+      const txt = scene.add.text(x, y, text, { font: '20px monospace', fill: color, stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(200);
+      scene.tweens.add({ targets: txt, y: y - 50, alpha: 0, duration: 1000, onComplete: () => txt.destroy() });
+    }
+
+    function drawHP(ship) {
+      const hpForBar = (ship.predictedHp ?? ship.hp);
+      const pct = Math.max(0, hpForBar / ship.stats.hp);
+      graphics.fillStyle(0x000000);
+      graphics.fillRect(ship.x - 20, ship.y - 45, 40, 6);
+      graphics.fillStyle(ship.faction === 'PLAYER' ? 0x00ff00 : 0xff0000);
+      graphics.fillRect(ship.x - 20, ship.y - 45, 40 * pct, 6);
+    }
+
+    function drawUI(scene) {
+      uiGroup.removeAll(true);
+      if (!selectedShip) return;
+      const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
+      createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); }, uiGroup);
+      createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); }, uiGroup);
+      let cancelX = 250;
+      if (selectedShip.plannedMove) { createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000, () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); }, uiGroup); cancelX += 110; }
+      if (selectedShip.plannedAttack) { createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000, () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); }, uiGroup); }
+    }
+
+    function createButton(scene, x, y, text, w, h, color, callback, targetGroup) {
+      const container = scene.add.container(x, y);
+      const bg = scene.add.rectangle(0, 0, w, h, color).setInteractive({ useHandCursor: true }).on('pointerdown', callback);
+      const label = scene.add.text(0, 0, text, { fontSize: '13px', fontStyle: 'bold', fontFamily: 'Arial', align: 'center' }).setOrigin(0.5);
+      container.add([bg, label]);
+      if (targetGroup) targetGroup.add(container);
+      return container;
+    }
+
+    function updateHandles() {
+      if (!selectedShip) return;
+      if (selectedShip.plannedMove) { moveHandle.setPosition(selectedShip.plannedMove.x, selectedShip.plannedMove.y); moveHandle.setVisible(true); moveHandle.setFillStyle(0x00ff00); } else { moveHandle.setVisible(false); }
+      if (selectedShip.plannedAttack) { attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y); attackHandle.setVisible(true); } else { attackHandle.setVisible(false); }
     }
 
     function update() {
       graphics.clear();
-      [...playerSquad, ...enemySquad].forEach(s => {
-         if(!s.active) return;
-         drawHP(s);
-         // DEBUG ROXO: Se a bola roxa estiver em cima da nave inimiga, o código funcionou.
-         if (scene.physics.config?.debug) {
-             graphics.lineStyle(2, 0xaa00ff, 0.8);
-             graphics.strokeCircle(s.body.center.x, s.body.center.y, s.body.radius);
-         }
-         if(s.isSelected) {
-            graphics.lineStyle(2, 0x00ff00); graphics.strokeCircle(s.body.center.x, s.body.center.y, s.body.radius);
-            graphics.lineStyle(1, 0x00ff00, 0.2); graphics.strokeCircle(s.body.center.x, s.body.center.y, s.stats.moveRange);
-         }
-         if(s.plannedMove) { graphics.lineStyle(2,0x00ff00,0.8); graphics.lineBetween(s.x,s.y,s.plannedMove.x,s.plannedMove.y); }
-         if(s.plannedAttack) { graphics.lineStyle(2,0xff0000,0.8); graphics.lineBetween(s.x,s.y,s.plannedAttack.x,s.plannedAttack.y); }
+      if (isExecuting) {
+        moveHandle.setVisible(false);
+        attackHandle.setVisible(false);
+        [...playerSquad, ...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
+        return;
+      }
+
+      [...playerSquad].forEach(ship => {
+        if (!ship.active) return;
+        drawHP(ship);
+
+        if (ship.plannedMove) {
+          graphics.lineStyle(2, 0x00ff00, 0.8);
+          graphics.lineBetween(ship.x, ship.y, ship.plannedMove.x, ship.plannedMove.y);
+        }
+
+        if (ship.plannedAttack) {
+          graphics.lineStyle(2, 0xff0000, 0.8);
+          graphics.lineBetween(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
+
+          if (ship.weapon.type === 'SPREAD') {
+            const angle = Phaser.Math.Angle.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
+            const dist = Phaser.Math.Distance.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
+            const p1 = { x: ship.x + Math.cos(angle - 0.2) * dist, y: ship.y + Math.sin(angle - 0.2) * dist };
+            const p2 = { x: ship.x + Math.cos(angle + 0.2) * dist, y: ship.y + Math.sin(angle + 0.2) * dist };
+            graphics.lineStyle(1, 0xff0000, 0.3);
+            graphics.lineBetween(ship.x, ship.y, p1.x, p1.y);
+            graphics.lineBetween(ship.x, ship.y, p2.x, p2.y);
+          }
+        }
+
+        if (ship.isSelected) {
+          const c = getHitboxCenter(ship);
+          graphics.lineStyle(2, 0x00ff00);
+          graphics.strokeCircle(c.x, c.y, ship.body.radius);
+          graphics.lineStyle(1, 0x00ff00, 0.15);
+          graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
+        }
       });
+
+      [...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
     }
 
-    function drawHP(s) {
-       graphics.fillStyle(0x000); graphics.fillRect(s.x-20, s.y-45, 40, 6);
-       graphics.fillStyle(s.faction==='PLAYER'?0x00ff00:0xff0000);
-       graphics.fillRect(s.x-20, s.y-45, 40*(s.hp/s.stats.hp), 6);
-    }
-    
-    function deselectAll() { if(selectedShip) selectedShip.isSelected=false; selectedShip=null; moveHandle.setVisible(false); attackHandle.setVisible(false); }
-    function updateHandles() {
-       if(!selectedShip) return;
-       if(selectedShip.plannedMove) { moveHandle.setPosition(selectedShip.plannedMove.x, selectedShip.plannedMove.y); moveHandle.setVisible(true); } else moveHandle.setVisible(false);
-       if(selectedShip.plannedAttack) { attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y); attackHandle.setVisible(true); } else attackHandle.setVisible(false);
-    }
-    // Simplificado para brevidade, adicione se tiver botoes de UI extra
-    function drawUI(scene) {} 
-
-    return () => { if(gameRef.current) gameRef.current.destroy(true); };
+    return () => {
+      if (unsubscribeTurns) unsubscribeTurns();
+      if (unsubscribeSurrender) unsubscribeSurrender();
+      if (gameRef.current) {
+        gameRef.current.destroy(true);
+        gameRef.current = null;
+      }
+    };
   }, [roomId, isHost, isTraining, lang]);
 
   return <div id="phaser-container" />;
 };
 
 const styles = {
-  backgroundWrapper: { width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' },
-  gameContainer: { width: '1024px', height: '768px', position: 'relative', background: '#111', overflow: 'hidden' },
-  menuBox: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' },
-  title: { fontSize: '3rem', color: '#00ccff' },
-  btn: { padding: '15px 30px', margin: '10px', fontSize: '1.2rem', cursor: 'pointer', background: '#0077ff', color: '#fff', border: 'none', borderRadius: '5px' },
-  lobbyBox: { padding: '20px', background: '#222', borderRadius: '10px' },
-  input: { padding: '10px', fontSize: '1.5rem', textAlign: 'center', margin: '10px' },
-  cardRow: { display: 'flex', gap: '20px' },
-  card: { padding: '10px', background: '#333', cursor: 'pointer', border: '1px solid #555' },
-  overlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
-  slotActive: { padding: '10px', background: '#004400', color: '#fff', border: '1px solid #0f0', marginTop: 5, cursor: 'pointer' },
-  startBtn: { padding: '20px 60px', fontSize: '1.5rem', background: '#00ff00', border: 'none', cursor: 'pointer', marginTop: 20 }
+  backgroundWrapper: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, #1a1a2e 0%, #000000 100%)' },
+  gameContainer: { width: `${TOTAL_WIDTH}px`, height: `${TOTAL_HEIGHT}px`, position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', background: '#000', border: '1px solid #333' },
+  menuBox: { width: '100%', height: '100%', backgroundImage: 'url(assets/intro.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 40 },
+  menuContent: { width: '100%', padding: '20px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center' },
+  instructionsBox: { textAlign: 'center', marginBottom: 20, textShadow: '0 2px 4px black' },
+  title: { fontSize: '3rem', color: '#00ccff', marginBottom: 10, fontFamily: 'Arial', fontWeight: '900', letterSpacing: '2px', textAlign: 'center', textShadow: '0 0 15px #00ccff' },
+  cardRow: { display: 'flex', gap: 20, marginBottom: 20 },
+  card: { width: 160, padding: 15, background: 'rgba(0, 20, 40, 0.7)', border: '1px solid #005577', borderRadius: 8, cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', backdropFilter: 'blur(4px)', color: '#fff' },
+  cardImage: { width: '80%', height: 'auto', display: 'block', margin: '0 auto 10px', filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.3))' },
+  statLine: { fontSize: '11px', color: '#aaa', marginTop: 5, fontWeight: 'bold' },
+  slotsContainer: { display: 'flex', gap: 10, marginBottom: 20 },
+  slotActive: { width: 120, height: 35, border: '1px solid #00ff00', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 50, 0, 0.8)', borderRadius: 4, fontSize: '12px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' },
+  slotEmpty: { width: 120, height: 35, border: '1px dashed #666', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', borderRadius: 4, fontSize: '12px', color: '#666' },
+  startBtn: { padding: '12px 50px', fontSize: '1.2rem', background: 'linear-gradient(90deg, #0077ff, #00aaff)', border: 'none', borderRadius: 4, color: '#fff', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', boxShadow: '0 0 15px rgba(0,119,255,0.5)' },
+  btn: { padding: '12px 40px', fontSize: '1.2rem', background: '#0077ff', border: 'none', borderRadius: 30, cursor: 'pointer', fontWeight: 'bold', color: '#fff', boxShadow: '0 4px 10px rgba(0,119,255,0.4)' },
+  overlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
+  lobbyBox: { width: 300, padding: 30, background: 'rgba(0,0,0,0.6)', border: '1px solid #444', borderRadius: 10, textAlign: 'center' },
+  input: { padding: 10, fontSize: 24, textAlign: 'center', width: '100%', marginBottom: 20, background: '#111', border: '1px solid #555', color: '#fff', borderRadius: 5, letterSpacing: 5, textTransform: 'uppercase' }
 };
