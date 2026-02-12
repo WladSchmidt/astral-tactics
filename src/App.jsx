@@ -118,8 +118,8 @@ const SHIP_STATS = {
     radius: 24, 
     moveRange: 385, 
     sprite: 'flux_img', 
-    hitRadius: 20, // Ajustado para bater com o visual
-    hitOffset: { x: 0, y: 0 } 
+    hitRadius: 150, // Ajustado para bater com o visual
+    hitOffset: { x: 170, y: 200 } 
   },
   VECTOR: { 
     id: 'VECTOR', 
@@ -131,8 +131,8 @@ const SHIP_STATS = {
     radius: 28, 
     moveRange: 310, 
     sprite: 'vector_img', 
-    hitRadius: 25, 
-    hitOffset: { x: 0, y: 0 } 
+    hitRadius: 150, 
+    hitOffset: { x: 140, y: 180 } 
   },
   COLOSSUS: { 
     id: 'COLOSSUS', 
@@ -144,8 +144,8 @@ const SHIP_STATS = {
     radius: 38, 
     moveRange: 220, 
     sprite: 'colossus_img', 
-    hitRadius: 32, 
-    hitOffset: { x: 0, y: 0 } 
+    hitRadius: 155, 
+    hitOffset: { x: 150, y: 180 } 
   }
 };
 
