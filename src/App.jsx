@@ -106,46 +106,22 @@ const TEXTS = {
   }
 };
 
-// --- DADOS DAS NAVES (CORRIGIDOS: HITBOX MENOR) ---
+// --- DADOS DAS NAVES (HITBOX GENEROSA & CENTRALIZADA) ---
 const SHIP_STATS = {
   FLUX: { 
-    id: 'FLUX', 
-    name: 'FLUX', 
-    descKey: 'DESC_FLUX', 
-    hp: 90, 
-    speed: 155, 
-    color: 0x00ffff, 
-    radius: 24, 
-    moveRange: 385, 
-    sprite: 'flux_img', 
-    hitRadius: 150, // Ajustado para bater com o visual
-    hitOffset: { x: 170, y: 200 } 
+    id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
+    hitRadius: 40, // Cobre a nave + uma borda extra
+    hitOffset: { x: 0, y: 0 } 
   },
   VECTOR: { 
-    id: 'VECTOR', 
-    name: 'VECTOR', 
-    descKey: 'DESC_VECTOR', 
-    hp: 120, 
-    speed: 110, 
-    color: 0x00ff00, 
-    radius: 28, 
-    moveRange: 310, 
-    sprite: 'vector_img', 
-    hitRadius: 150, 
-    hitOffset: { x: 140, y: 180 } 
+    id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
+    hitRadius: 45, // Um pouco maior
+    hitOffset: { x: 0, y: 0 } 
   },
   COLOSSUS: { 
-    id: 'COLOSSUS', 
-    name: 'COLOSSUS', 
-    descKey: 'DESC_COLOSSUS', 
-    hp: 180, 
-    speed: 75, 
-    color: 0xffaa00, 
-    radius: 38, 
-    moveRange: 220, 
-    sprite: 'colossus_img', 
-    hitRadius: 155, 
-    hitOffset: { x: 150, y: 180 } 
+    id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
+    hitRadius: 50, // Bem fácil de acertar
+    hitOffset: { x: 0, y: 0 } 
   }
 };
 
@@ -532,7 +508,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       backgroundColor: '#000000',
       parent: 'phaser-container',
       disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
+      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } }, // ✅ DEBUG ON
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
@@ -783,7 +759,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       return t;
     }
 
-  // ✅ HOST calcula o resultado (Versão Corrigida para respeitar Offset/Linhas Roxas)
+    // ✅ HOST calcula o resultado (V50 - Thick Raycast / Com Debug)
     function computeHostTurnResult(scene, myData, enemyData) {
       const events = [];
       const allShips = [...playerSquad, ...enemySquad];
@@ -804,18 +780,18 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
       };
 
-      // Helper para checar obstáculos e naves
-      const getFirstHit = (ox, oy, dx, dy, targetSquad) => {
+      // Helper agora aceita o raio do projétil (extraRadius)
+      const getFirstHit = (ox, oy, dx, dy, targetSquad, extraRadius = 0) => {
         let best = null;
 
-        // 1. Checa Naves Inimigas
+        // 1. Checa Naves Inimigas (Raio Nave + Raio Bala)
         targetSquad.forEach(tgt => {
           if (!tgt.active || !tgt.body) return;
           
-          // 🔥 CORREÇÃO: Usa o CENTRO DO CORPO FÍSICO (respeita o offset)
           const cx = tgt.body.center.x;
           const cy = tgt.body.center.y;
-          const r = tgt.body.radius; 
+          // 🔥 AQUI ESTÁ A MÁGICA: Soma o tamanho do alvo + tamanho do tiro
+          const r = tgt.body.radius + extraRadius; 
 
           const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
           
@@ -824,13 +800,14 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           }
         });
 
-        // 2. Checa Asteroides (BLOQUEIO DE TIRO)
+        // 2. Checa Asteroides (Raio Pedra + Raio Bala)
         obstacleGroup.getChildren().forEach(obs => {
            if(!obs.body) return;
            
            const cx = obs.body.center.x;
            const cy = obs.body.center.y;
-           const r = obs.body.radius;
+           // Asteroides também bloqueiam tiros que raspam neles
+           const r = obs.body.radius + extraRadius;
 
            const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
            if (t !== null && t > 0) {
@@ -838,7 +815,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
            }
         });
 
-        return best; 
+        return best;
       };
 
       const processShooter = (shooterShip, planAttack) => {
@@ -850,21 +827,29 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
         const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
 
+        // Calcula o tamanho físico do projétil igual ao Phaser (radius + 8 de offset visual)
+        const projRadius = (weapon.radius + 8);
+
         angleOffsets.forEach((off) => {
           const ang = baseAngle + off;
           const dx = Math.cos(ang);
           const dy = Math.sin(ang);
 
+          // Origem: Ponta da arma (45px)
+          const startX = shooterShip.x + (dx * 45);
+          const startY = shooterShip.y + (dy * 45);
+
           const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
             ? enemySquad : playerSquad;
 
-          const hit = getFirstHit(shooterShip.x, shooterShip.y, dx, dy, enemies);
+          // Passa o raio do projétil para a checagem
+          const hit = getFirstHit(startX, startY, dx, dy, enemies, projRadius);
 
           if (hit) {
              if (hit.t > 1400) return;
 
-             const hitX = shooterShip.x + dx * hit.t;
-             const hitY = shooterShip.y + dy * hit.t;
+             const hitX = startX + dx * hit.t;
+             const hitY = startY + dy * hit.t;
 
              if (hit.type === 'SHIP') {
                 applyDmg(hit.target.netId, weapon.damage, hitX, hitY);
@@ -904,7 +889,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           const dy = pa.y - pb.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           
-          // Usa raio do body
           const ra = (a.body?.radius ?? 20);
           const rb = (b.body?.radius ?? 20);
 
@@ -916,7 +900,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       });
 
-      // Gera estado final
       const finalHpState = {};
       allShips.forEach(s => {
         const st = pos[s.netId];
@@ -1171,8 +1154,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       else if (!enemyAlive) { gameRef.current.destroy(true); onGameOver('VICTORY'); }
     }
 
+    // ✅ Ajuste para o debug visual bater com a matemática
     function getHitboxCenter(ship) {
-      return { x: ship.body.x + ship.body.halfWidth, y: ship.body.y + ship.body.halfHeight };
+      if (!ship.body) return { x: ship.x, y: ship.y };
+      return { x: ship.body.center.x, y: ship.body.center.y };
     }
 
     function deselectAll() {
