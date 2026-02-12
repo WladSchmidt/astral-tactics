@@ -783,11 +783,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       return t;
     }
 
+  // ✅ HOST calcula o resultado (Versão Corrigida para respeitar Offset/Linhas Roxas)
     function computeHostTurnResult(scene, myData, enemyData) {
       const events = [];
       const allShips = [...playerSquad, ...enemySquad];
       const pos = {};
       
+      // Snapshot inicial
       allShips.forEach(s => {
         pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
       });
@@ -802,25 +804,41 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
       };
 
+      // Helper para checar obstáculos e naves
       const getFirstHit = (ox, oy, dx, dy, targetSquad) => {
         let best = null;
 
+        // 1. Checa Naves Inimigas
         targetSquad.forEach(tgt => {
-          if (!tgt.active) return;
-          const t = rayCircleHit(ox, oy, dx, dy, tgt.x, tgt.y, (tgt.body?.radius ?? 20));
+          if (!tgt.active || !tgt.body) return;
+          
+          // 🔥 CORREÇÃO: Usa o CENTRO DO CORPO FÍSICO (respeita o offset)
+          const cx = tgt.body.center.x;
+          const cy = tgt.body.center.y;
+          const r = tgt.body.radius; 
+
+          const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
+          
           if (t !== null && t > 0) {
              if (!best || t < best.t) best = { t, type: 'SHIP', target: tgt };
           }
         });
 
+        // 2. Checa Asteroides (BLOQUEIO DE TIRO)
         obstacleGroup.getChildren().forEach(obs => {
-           const t = rayCircleHit(ox, oy, dx, dy, obs.x, obs.y, obs.body.radius);
+           if(!obs.body) return;
+           
+           const cx = obs.body.center.x;
+           const cy = obs.body.center.y;
+           const r = obs.body.radius;
+
+           const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
            if (t !== null && t > 0) {
               if (!best || t < best.t) best = { t, type: 'OBSTACLE', target: obs };
            }
         });
 
-        return best;
+        return best; 
       };
 
       const processShooter = (shooterShip, planAttack) => {
@@ -856,6 +874,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       };
 
+      // Processa planos
       playerSquad.forEach(s => {
         const p = myData.find(m => m.index === s.squadIndex);
         if (p?.attack) processShooter(s, p.attack);
@@ -865,6 +884,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (p?.attack) processShooter(s, p.attack);
       });
 
+      // Checagem de Colisão (Crash)
       const plannedPos = {};
       allShips.forEach(s => {
         const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
@@ -883,6 +903,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           const dx = pa.x - pb.x;
           const dy = pa.y - pb.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          // Usa raio do body
           const ra = (a.body?.radius ?? 20);
           const rb = (b.body?.radius ?? 20);
 
@@ -894,6 +916,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         });
       });
 
+      // Gera estado final
       const finalHpState = {};
       allShips.forEach(s => {
         const st = pos[s.netId];
