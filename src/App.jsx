@@ -1337,6 +1337,21 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       const weapon = shooter.weapon;
       const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
 
+      function getLifetimeToMapEdgeMs(sx, sy, vx, vy) {
+        const candidates = [];
+
+        if (vx > 0) candidates.push((TOTAL_WIDTH - sx) / vx);
+        else if (vx < 0) candidates.push((0 - sx) / vx);
+
+        if (vy > 0) candidates.push((PLAY_HEIGHT - sy) / vy);
+        else if (vy < 0) candidates.push((0 - sy) / vy);
+
+        const positive = candidates.filter(t => Number.isFinite(t) && t > 0);
+        if (!positive.length) return 2200;
+
+        return Math.max(200, Math.ceil(Math.min(...positive) * 1000) + 80);
+      }
+
       const spawnBullet = (angleOffset) => {
         const angle = baseAngle + angleOffset;
         const sx = shooter.x + Math.cos(angle) * 45;
@@ -1358,7 +1373,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const velocityY = Math.sin(angle) * weapon.speed;
         proj.body.setVelocity(velocityX, velocityY);
 
-        scene.time.delayedCall(2000, () => { if (proj.active) proj.destroy(); });
+        const ttl = getLifetimeToMapEdgeMs(sx, sy, velocityX, velocityY);
+        scene.time.delayedCall(ttl, () => { if (proj.active) proj.destroy(); });
       };
 
       if (weapon.type === 'SINGLE') spawnBullet(0);
