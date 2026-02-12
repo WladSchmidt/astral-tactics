@@ -106,24 +106,49 @@ const TEXTS = {
   }
 };
 
-// --- DADOS DAS NAVES (V52: HITBOX GRANDE & OFFSETS ZERADOS) ---
-// Removemos os offsets manuais para corrigir a rotação invertida
-// Aumentamos o raio para garantir que cubra a nave inteira
+// ✅ AJUSTE PRINCIPAL (SINCRONIA):
+// 1) HITBOX volta a ser "humana" (não gigante), senão tudo vira hit fantasma.
+// 2) OFFSET MANUAL continua existindo, MAS é aplicado SOMANDO ao baseOffset (não substituindo!)
+//    -> isso evita a bola roxa ficar “fora do sprite” de forma inconsistente entre física e cálculo.
 const SHIP_STATS = {
-  FLUX: { 
-    id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
-    hitRadius: 130, // Raio grande para cobrir arte descentralizada
-    hitOffset: { x: 0, y: 0 } 
+  FLUX: {
+    id: 'FLUX',
+    name: 'FLUX',
+    descKey: 'DESC_FLUX',
+    hp: 90,
+    speed: 155,
+    color: 0x00ffff,
+    radius: 24,
+    moveRange: 385,
+    sprite: 'flux_img',
+    hitRadius: 45,
+    hitOffset: { x: 0, y: 0 }
   },
-  VECTOR: { 
-    id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
-    hitRadius: 140, 
-    hitOffset: { x: 0, y: 0 } 
+  VECTOR: {
+    id: 'VECTOR',
+    name: 'VECTOR',
+    descKey: 'DESC_VECTOR',
+    hp: 120,
+    speed: 110,
+    color: 0x00ff00,
+    radius: 28,
+    moveRange: 310,
+    sprite: 'vector_img',
+    hitRadius: 50,
+    hitOffset: { x: 0, y: 0 }
   },
-  COLOSSUS: { 
-    id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
-    hitRadius: 150, 
-    hitOffset: { x: 0, y: 0 } 
+  COLOSSUS: {
+    id: 'COLOSSUS',
+    name: 'COLOSSUS',
+    descKey: 'DESC_COLOSSUS',
+    hp: 180,
+    speed: 75,
+    color: 0xffaa00,
+    radius: 38,
+    moveRange: 220,
+    sprite: 'colossus_img',
+    hitRadius: 55,
+    hitOffset: { x: 0, y: 0 }
   }
 };
 
@@ -510,7 +535,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       backgroundColor: '#000000',
       parent: 'phaser-container',
       disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } }, // DEBUG ON
+      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
@@ -542,6 +567,181 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       this.load.audio('explosion', 'assets/audio/explosion.mp3');
       this.load.audio('click', 'assets/audio/click.mp3');
       this.load.audio('crash', 'assets/audio/crash.mp3');
+    }
+
+    // ✅ Ray vs Circle (para sincronia com o "projétil circular se movendo")
+    // Retorna a menor distância ao longo do raio onde ocorre interseção (t), ou null.
+    function rayCircleHit(ox, oy, dx, dy, cx, cy, r) {
+      const fx = ox - cx;
+      const fy = oy - cy;
+
+      const b = 2 * (fx * dx + fy * dy);
+      const c = (fx * fx + fy * fy) - (r * r);
+
+      const disc = b * b - 4 * c;
+      if (disc < 0) return null;
+
+      const sqrtDisc = Math.sqrt(disc);
+      const t1 = (-b - sqrtDisc) / 2;
+      const t2 = (-b + sqrtDisc) / 2;
+
+      let t = null;
+      if (t1 >= 0 && t2 >= 0) t = Math.min(t1, t2);
+      else if (t1 >= 0) t = t1;
+      else if (t2 >= 0) t = t2;
+
+      return t;
+    }
+
+    // ✅ HOST calcula o resultado (VERSÃO SINCRONIZADA)
+    // - Mesma origem do projétil (45px)
+    // - Mesmo raio do projétil (weapon.radius + 8) igual ao Phaser
+    // - Usa rayCircleHit (interseção real) ao invés de "fat line" (que dá hit fantasma)
+    function computeHostTurnResult(scene, myData, enemyData) {
+      const events = [];
+      const allShips = [...playerSquad, ...enemySquad];
+      const pos = {};
+
+      allShips.forEach(s => {
+        pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
+      });
+
+      const applyDmg = (targetNetId, dmg, hitX, hitY) => {
+        if (!pos[targetNetId] || !pos[targetNetId].active) return;
+        pos[targetNetId].hp -= dmg;
+        events.push({ type: 'DMG', target: targetNetId, dmg, x: hitX, y: hitY });
+        if (pos[targetNetId].hp <= 0) {
+          pos[targetNetId].active = false;
+          events.push({ type: 'KILL', target: targetNetId, x: hitX, y: hitY });
+        }
+      };
+
+      const getFirstHit = (ox, oy, dx, dy, targetSquad, projR) => {
+        let best = null;
+
+        // 1) Naves
+        targetSquad.forEach(tgt => {
+          if (!tgt.active || !tgt.body) return;
+          const cx = tgt.body.center.x;
+          const cy = tgt.body.center.y;
+
+          // ✅ raio efetivo = raio nave + raio projétil (igual a mover um círculo ao longo da linha)
+          const r = tgt.body.radius + projR;
+
+          const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
+          if (t !== null && t > 0) {
+            if (!best || t < best.t) best = { t, type: 'SHIP', target: tgt };
+          }
+        });
+
+        // 2) Asteroides
+        obstacleGroup.getChildren().forEach(obs => {
+          if (!obs.body) return;
+          const cx = obs.body.center.x;
+          const cy = obs.body.center.y;
+          const r = obs.body.radius + projR;
+
+          const t = rayCircleHit(ox, oy, dx, dy, cx, cy, r);
+          if (t !== null && t > 0) {
+            if (!best || t < best.t) best = { t, type: 'OBSTACLE', target: obs };
+          }
+        });
+
+        return best;
+      };
+
+      const processShooter = (shooterShip, planAttack) => {
+        if (!shooterShip.active) return;
+        if (!planAttack) return;
+
+        const weaponId = planAttack.weapon || 'CANNON';
+        const weapon = WEAPONS[weaponId] || WEAPONS.CANNON;
+
+        const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
+        const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
+
+        // ✅ MESMO RAIO DO PROJÉTIL NO PHASER:
+        // proj.body.setCircle(weapon.radius + 8)
+        const projR = weapon.radius + 8;
+
+        angleOffsets.forEach((off) => {
+          const ang = baseAngle + off;
+          const dx = Math.cos(ang);
+          const dy = Math.sin(ang);
+
+          // ✅ MESMA ORIGEM DO VISUAL (45px)
+          const startX = shooterShip.x + (dx * 45);
+          const startY = shooterShip.y + (dy * 45);
+
+          const enemies =
+            (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+              ? enemySquad
+              : playerSquad;
+
+          const hit = getFirstHit(startX, startY, dx, dy, enemies, projR);
+
+          if (hit) {
+            if (hit.t > 1400) return;
+
+            const hitX = startX + dx * hit.t;
+            const hitY = startY + dy * hit.t;
+
+            if (hit.type === 'SHIP') {
+              applyDmg(hit.target.netId, weapon.damage, hitX, hitY);
+            }
+            events.push({ type: 'HITFX', x: hitX, y: hitY });
+          }
+        });
+      };
+
+      playerSquad.forEach(s => {
+        const p = myData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
+      });
+      enemySquad.forEach(s => {
+        const p = enemyData.find(m => m.index === s.squadIndex);
+        if (p?.attack) processShooter(s, p.attack);
+      });
+
+      // Colisão (Crash) — mantém
+      const plannedPos = {};
+      allShips.forEach(s => {
+        const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
+          ? myData.find(p => p.index === s.squadIndex)
+          : enemyData.find(p => p.index === s.squadIndex);
+
+        if (plan?.move && s.active) plannedPos[s.netId] = { x: plan.move.x, y: plan.move.y };
+        else plannedPos[s.netId] = { x: s.x, y: s.y };
+      });
+
+      playerSquad.forEach(a => {
+        if (!a.active) return;
+        enemySquad.forEach(b => {
+          if (!b.active) return;
+          const pa = plannedPos[a.netId];
+          const pb = plannedPos[b.netId];
+          const dx = pa.x - pb.x;
+          const dy = pa.y - pb.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const ra = (a.body?.radius ?? 20);
+          const rb = (b.body?.radius ?? 20);
+
+          if (dist <= (ra + rb)) {
+            applyDmg(a.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            applyDmg(b.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
+            events.push({ type: 'CRASHFX', x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
+          }
+        });
+      });
+
+      const finalHpState = {};
+      allShips.forEach(s => {
+        const st = pos[s.netId];
+        finalHpState[s.netId] = st ? st.hp : s.hp;
+      });
+
+      return { hpState: finalHpState, events, at: Date.now() };
     }
 
     async function create() {
@@ -595,7 +795,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
 
-        const radius = obs.displayWidth * 0.18; 
+        const radius = obs.displayWidth * 0.18;
         obs.body.setCircle(radius);
 
         const offsetX = (obs.displayWidth / 2) - radius;
@@ -661,7 +861,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           return;
         }
 
-        // Feedback visual imediato para todos (mas dano real só vem do server)
+        // Placebo visual no multiplayer
         takeDamagePredicted(scene, ship, projectile.damage);
       });
 
@@ -692,7 +892,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           return;
         }
 
-        // Placebo visual
         takeDamagePredicted(scene, a, 20);
         takeDamagePredicted(scene, b, 20);
       });
@@ -736,180 +935,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       startTimer(scene);
     }
 
-    // ✅ FUNÇÃO MATEMÁTICA "FAT LINE" (Gordura no Raio para imitar o Phaser)
-    // Calcula distância de Ponto (centro da nave) à Linha (tiro)
-    function distancePointToLineSegment(px, py, x1, y1, x2, y2) {
-      const A = px - x1;
-      const B = py - y1;
-      const C = x2 - x1;
-      const D = y2 - y1;
-
-      const dot = A * C + B * D;
-      const len_sq = C * C + D * D;
-      let param = -1;
-      if (len_sq !== 0) // in case of 0 length line
-          param = dot / len_sq;
-
-      let xx, yy;
-
-      if (param < 0) {
-        xx = x1;
-        yy = y1;
-      }
-      else if (param > 1) {
-        xx = x2;
-        yy = y2;
-      }
-      else {
-        xx = x1 + param * C;
-        yy = y1 + param * D;
-      }
-
-      const dx = px - xx;
-      const dy = py - yy;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // ✅ HOST calcula o resultado (V51 - Fat Line Math)
-    function computeHostTurnResult(scene, myData, enemyData) {
-      const events = [];
-      const allShips = [...playerSquad, ...enemySquad];
-      const pos = {};
-      
-      // Snapshot inicial
-      allShips.forEach(s => {
-        pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
-      });
-
-      const applyDmg = (targetNetId, dmg, hitX, hitY) => {
-        if (!pos[targetNetId] || !pos[targetNetId].active) return;
-        pos[targetNetId].hp -= dmg;
-        events.push({ type: 'DMG', target: targetNetId, dmg, x: hitX, y: hitY });
-        if (pos[targetNetId].hp <= 0) {
-          pos[targetNetId].active = false;
-          events.push({ type: 'KILL', target: targetNetId, x: hitX, y: hitY });
-        }
-      };
-
-      const processShooter = (shooterShip, planAttack) => {
-        if (!shooterShip.active) return;
-        if (!planAttack) return;
-
-        const weaponId = planAttack.weapon || 'CANNON';
-        const weapon = WEAPONS[weaponId] || WEAPONS.CANNON;
-        const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
-        const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
-
-        // "Gordura" do tiro para facilitar o acerto (Raio Bala + Margem)
-        const bulletFatness = (weapon.radius + 8) + 5; 
-
-        angleOffsets.forEach((off) => {
-          const ang = baseAngle + off;
-          const dx = Math.cos(ang);
-          const dy = Math.sin(ang);
-
-          const startX = shooterShip.x + (dx * 45);
-          const startY = shooterShip.y + (dy * 45);
-          const endX = startX + (dx * 1400); // Tiro longo
-          const endY = startY + (dy * 1400);
-
-          const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
-            ? enemySquad : playerSquad;
-
-          let bestHit = null;
-
-          // Checa Naves (Hitbox Circular "Gorda")
-          enemies.forEach(tgt => {
-            if (!tgt.active || !tgt.body) return;
-            
-            // Usa o centro da BOLA ROXA (Body Center)
-            const cx = tgt.body.center.x;
-            const cy = tgt.body.center.y;
-            const r = tgt.body.radius + bulletFatness; // Aumenta o raio do alvo virtualmente
-
-            const dist = distancePointToLineSegment(cx, cy, startX, startY, endX, endY);
-            
-            if (dist <= r) {
-               const distToShooter = Phaser.Math.Distance.Between(startX, startY, cx, cy);
-               if (!bestHit || distToShooter < bestHit.dist) {
-                 bestHit = { dist: distToShooter, type: 'SHIP', target: tgt, x: cx, y: cy };
-               }
-            }
-          });
-
-          // Checa Asteroides (Bloqueio)
-          obstacleGroup.getChildren().forEach(obs => {
-             if(!obs.body) return;
-             const cx = obs.body.center.x;
-             const cy = obs.body.center.y;
-             const r = obs.body.radius + bulletFatness;
-
-             const dist = distancePointToLineSegment(cx, cy, startX, startY, endX, endY);
-             if (dist <= r) {
-                const distToShooter = Phaser.Math.Distance.Between(startX, startY, cx, cy);
-                if (!bestHit || distToShooter < bestHit.dist) {
-                   bestHit = { dist: distToShooter, type: 'OBSTACLE', target: obs, x: cx, y: cy };
-                }
-             }
-          });
-
-          if (bestHit) {
-             if (bestHit.type === 'SHIP') {
-                applyDmg(bestHit.target.netId, weapon.damage, bestHit.x, bestHit.y);
-             } 
-             events.push({ type: 'HITFX', x: bestHit.x, y: bestHit.y });
-          }
-        });
-      };
-
-      playerSquad.forEach(s => {
-        const p = myData.find(m => m.index === s.squadIndex);
-        if (p?.attack) processShooter(s, p.attack);
-      });
-      enemySquad.forEach(s => {
-        const p = enemyData.find(m => m.index === s.squadIndex);
-        if (p?.attack) processShooter(s, p.attack);
-      });
-
-      const plannedPos = {};
-      allShips.forEach(s => {
-        const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
-            ? myData.find(p => p.index === s.squadIndex)
-            : enemyData.find(p => p.index === s.squadIndex);
-        if (plan?.move && s.active) plannedPos[s.netId] = { x: plan.move.x, y: plan.move.y };
-        else plannedPos[s.netId] = { x: s.x, y: s.y };
-      });
-
-      playerSquad.forEach(a => {
-        if (!a.active) return;
-        enemySquad.forEach(b => {
-          if (!b.active) return;
-          const pa = plannedPos[a.netId];
-          const pb = plannedPos[b.netId];
-          const dx = pa.x - pb.x;
-          const dy = pa.y - pb.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          
-          const ra = (a.body?.radius ?? 20);
-          const rb = (b.body?.radius ?? 20);
-
-          if (dist <= (ra + rb)) {
-            applyDmg(a.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
-            applyDmg(b.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
-            events.push({ type: 'CRASHFX', x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
-          }
-        });
-      });
-
-      const finalHpState = {};
-      allShips.forEach(s => {
-        const st = pos[s.netId];
-        finalHpState[s.netId] = st ? st.hp : s.hp;
-      });
-
-      return { hpState: finalHpState, events, at: Date.now() };
-    }
-
     function startTimer(scene) {
       if (timerEvent) timerEvent.remove();
       const endTime = Date.now() + (TURN_TIME_LIMIT * 1000);
@@ -950,19 +975,14 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       const r = stats.hitRadius ?? 16;
       ship.body.setCircle(r);
 
-      // 🔥 LÓGICA ANTIGA DE OFFSET (PARA MANTER A BOLA ROXA NO LUGAR QUE VOCÊ GOSTA)
+      // ✅ FIX SINCRONIA: SEMPRE usa baseOffset + manualOffset
+      // (nunca substituir por setOffset(170,200) direto)
       const baseOffsetX = (ship.displayWidth / 2) - r;
       const baseOffsetY = (ship.displayHeight / 2) - r;
       const manualX = stats.hitOffset?.x ?? 0;
       const manualY = stats.hitOffset?.y ?? 0;
-      
-      // Se tiver manual, usa ele direto (ignora o base) se for grande
-      // Ajuste híbrido para garantir que o offset manual (170) funcione
-      if (manualX > 0 || manualY > 0) {
-         ship.body.setOffset(manualX, manualY);
-      } else {
-         ship.body.setOffset(baseOffsetX, baseOffsetY);
-      }
+
+      ship.body.setOffset(baseOffsetX + manualX, baseOffsetY + manualY);
 
       ship.stats = stats;
       ship.hp = stats.hp;
@@ -974,7 +994,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       ship.netOwner = netOwner;
       ship.netId = `${netOwner}_${index}`;
 
-      ship.weapon = WEAPONS.CANNON; 
+      ship.weapon = WEAPONS.CANNON;
       ship.hasCrashed = false;
 
       shipsGroup.add(ship);
@@ -1374,7 +1394,11 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           }
         }
         if (ship.isSelected) {
-          const c = getHitboxCenter(ship); graphics.lineStyle(2, 0x00ff00); graphics.strokeCircle(c.x, c.y, ship.body.radius); graphics.lineStyle(1, 0x00ff00, 0.15); graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
+          const c = getHitboxCenter(ship);
+          graphics.lineStyle(2, 0x00ff00);
+          graphics.strokeCircle(c.x, c.y, ship.body.radius);
+          graphics.lineStyle(1, 0x00ff00, 0.15);
+          graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
         }
       });
       [...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
