@@ -58,6 +58,9 @@ const TEXTS = {
     DEFEAT: "DERROTA",
     DRAW: "EMPATE",
     BTN_RESTART: "REINICIAR",
+    REMATCH_SENT: "Pedido de nova partida enviado. Aguardando adversário...",
+    REMATCH_OPP: "O adversário quer nova partida. Clique em REINICIAR para aceitar.",
+    REMATCH_STARTING: "Ambos aceitaram. Iniciando nova partida...",
     BTN_MENU: "MENU PRINCIPAL",
     DESC_FLUX: "Alta velocidade, baixa vida.",
     DESC_VECTOR: "Status balanceados.",
@@ -99,6 +102,9 @@ const TEXTS = {
     DEFEAT: "DEFEAT",
     DRAW: "DRAW",
     BTN_RESTART: "RESTART",
+    REMATCH_SENT: "Rematch request sent. Waiting for opponent...",
+    REMATCH_OPP: "Opponent wants a rematch. Click RESTART to accept.",
+    REMATCH_STARTING: "Both accepted. Starting a new match...",
     BTN_MENU: "MAIN MENU",
     DESC_FLUX: "High speed, low HP.",
     DESC_VECTOR: "Balanced stats.",
@@ -112,17 +118,17 @@ const TEXTS = {
 const SHIP_STATS = {
   FLUX: { 
     id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
-    hitRadius: 30,
+    hitRadius: 130,
     hitOffset: { x: 170, y: 200 } 
   },
   VECTOR: { 
     id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
-    hitRadius: 40, 
+    hitRadius: 140, 
     hitOffset: { x: 140, y: 180 } 
   },
   COLOSSUS: { 
     id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
-    hitRadius: 50, 
+    hitRadius: 150, 
     hitOffset: { x: 150, y: 180 } 
   }
 };
@@ -163,6 +169,7 @@ export default function App() {
   const [statusMsg, setStatusMsg] = useState('');
   const [isHost, setIsHost] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
+  const [roomMatchVersion, setRoomMatchVersion] = useState(1);
 
   // --- ÁUDIO GLOBAL ---
   const [isGlobalMuted, setIsGlobalMuted] = useState(false);
@@ -172,6 +179,8 @@ export default function App() {
 
   const t = (key) => TEXTS[lang][key] || key;
   const surrenderHandledRef = useRef(false);
+  const rematchResolvedRef = useRef(false);
+  const rematchResettingRef = useRef(false);
 
   // 🔥 AUTOPLAY LÓGICA
   useEffect(() => {
@@ -231,7 +240,8 @@ export default function App() {
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
       setRoomId(code);
       const mapData = generateMapData();
-      await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData });
+      await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData, matchVersion: 1 });
+      setRoomMatchVersion(1);
       setStatusMsg(t('STATUS_CREATED').replace('{0}', code));
 
       const roomRef = ref(db, `rooms/${code}`);
@@ -260,7 +270,9 @@ export default function App() {
       const rRef = ref(db, `rooms/${joinCode}`);
       const snap = await get(rRef);
       if (snap.exists()) {
+        const roomData = snap.val() || {};
         await update(rRef, { guest: uid });
+        setRoomMatchVersion(roomData.matchVersion || 1);
         setRoomId(joinCode);
         setGameState('MENU');
       } else {
@@ -299,11 +311,21 @@ export default function App() {
 
   const restartGame = async () => {
     playClick();
-    setRunId(prev => prev + 1);
-    if (!isTraining && roomId) {
-      try { await set(ref(db, `rooms/${roomId}/surrender`), null); } catch (e) { console.error(e); }
+    if (isTraining) {
+      setRunId(prev => prev + 1);
+      setGameResult(null);
+      setGameState('PLAYING');
+      return;
     }
-    setGameState('PLAYING');
+
+    if (!roomId) return;
+    const myRole = isHost ? 'host' : 'guest';
+    try {
+      setStatusMsg(t('REMATCH_SENT'));
+      await update(ref(db, `rooms/${roomId}`), { [`rematchRequests/${myRole}`]: Date.now() });
+    } catch (e) {
+      setStatusMsg(t('STATUS_ERROR') + e.message);
+    }
   };
 
   const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
@@ -329,6 +351,63 @@ export default function App() {
     return () => unsubscribe();
   }, [roomId, isTraining, isHost, runId]);
 
+  useEffect(() => {
+    if (!roomId || isTraining || gameState !== 'GAMEOVER') return;
+
+    rematchResolvedRef.current = false;
+    rematchResettingRef.current = false;
+
+    const roomRef = ref(db, `rooms/${roomId}`);
+    const unsubscribe = onValue(roomRef, async (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const myKey = isHost ? 'host' : 'guest';
+      const oppKey = isHost ? 'guest' : 'host';
+      const req = data.rematchRequests || {};
+      const myAsked = !!req[myKey];
+      const oppAsked = !!req[oppKey];
+      const remoteVersion = data.matchVersion || 1;
+
+      if (remoteVersion > roomMatchVersion && !rematchResolvedRef.current) {
+        rematchResolvedRef.current = true;
+        setRoomMatchVersion(remoteVersion);
+        setGameResult(null);
+        setStatusMsg('');
+        setRunId(prev => prev + 1);
+        setGameState('PLAYING');
+        return;
+      }
+
+      if (myAsked && !oppAsked) setStatusMsg(t('REMATCH_SENT'));
+      else if (!myAsked && oppAsked) setStatusMsg(t('REMATCH_OPP'));
+      else if (myAsked && oppAsked) setStatusMsg(t('REMATCH_STARTING'));
+
+      if (isHost && myAsked && oppAsked && !rematchResettingRef.current) {
+        rematchResettingRef.current = true;
+        const nextVersion = (data.matchVersion || 1) + 1;
+        const newMap = generateMapData();
+        try {
+          await update(roomRef, {
+            matchVersion: nextVersion,
+            turn: 1,
+            map: newMap,
+            turns: null,
+            turnResults: null,
+            turnLive: null,
+            surrender: null,
+            rematchRequests: null
+          });
+        } catch (e) {
+          rematchResettingRef.current = false;
+          setStatusMsg(t('STATUS_ERROR') + e.message);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId, isTraining, gameState, isHost, roomMatchVersion, t]);
+
   return (
     <>
       <style>{`
@@ -336,7 +415,7 @@ export default function App() {
         * { box-sizing: border-box; user-select: none; }
         .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
         input::placeholder { color: #555; }
-        .music-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #00ccff; padding: 5px 0; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+        .music-btn { background: none; border: none; font-size: 14px; cursor: pointer; color: #00ccff; padding: 2px 4px; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; line-height: 1; }
         .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
       `}</style>
 
@@ -348,8 +427,31 @@ export default function App() {
       />
 
       <div style={styles.backgroundWrapper}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={styles.gameContainer}>
+        <div style={styles.musicDock}>
+          {!isGlobalMuted && (
+            <>
+              <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
+                <span>{'<<'}</span>
+              </button>
+              <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
+                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{isMusicPlaying ? '||' : '>'}</span>
+              </button>
+              <button className="music-btn" onClick={handleNextTrack} title="Pr�xima">
+                <span>{'>>'}</span>
+              </button>
+              <div style={{ width: 1, height: 16, background: '#00ccff', margin: '0 4px', opacity: 0.3 }}></div>
+            </>
+          )}
+          <button
+            className="music-btn"
+            onClick={() => setIsGlobalMuted(!isGlobalMuted)}
+            title="Master Mute"
+            style={{ color: isGlobalMuted ? '#ff4444' : '#00ff00' }}
+          >
+            <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{isGlobalMuted ? 'MUTED' : 'SOUND'}</span>
+          </button>
+        </div>
+        <div style={styles.gameContainer}>
             <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
               <button onClick={() => setLang('PT')} style={{ color: lang === 'PT' ? '#00ff00' : '#888', fontWeight: 'bold', cursor: 'pointer', background: 'none', border: 'none', fontSize: '14px' }}>PT</button>
               <div style={{ width: 1, background: '#555' }}></div>
@@ -444,48 +546,12 @@ export default function App() {
                   <button style={styles.btn} onClick={restartGame}>{t('BTN_RESTART')}</button>
                   <button style={{ ...styles.btn, background: '#444' }} onClick={backToMenu}>{t('BTN_MENU')}</button>
                 </div>
+                {!isTraining && (
+                  <p style={{ marginTop: 14, color: '#ffaa00', fontWeight: 'bold' }}>{statusMsg}</p>
+                )}
               </div>
             )}
           </div>
-
-          {/* 🎧 DOCK MULTIMÍDIA */}
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 8,
-            background: '#0a141e',
-            padding: '15px 8px',
-            borderRadius: '30px',
-            border: '2px solid #00ccff',
-            boxShadow: '0 0 15px rgba(0, 204, 255, 0.3), inset 0 0 10px rgba(0,0,0,0.5)',
-            zIndex: 9999
-          }}>
-            {!isGlobalMuted && (
-              <>
-                <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
-                  <span>🔼</span>
-                </button>
-                <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
-                  <span style={{ fontSize: '22px' }}>{isMusicPlaying ? '⏸' : '▶'}</span>
-                </button>
-                <button className="music-btn" onClick={handleNextTrack} title="Próxima">
-                  <span>🔽</span>
-                </button>
-                <div style={{ width: '80%', height: 1, background: '#00ccff', margin: '5px 0', opacity: 0.3 }}></div>
-              </>
-            )}
-            <button
-              className="music-btn"
-              onClick={() => setIsGlobalMuted(!isGlobalMuted)}
-              title="Master Mute"
-              style={{ color: isGlobalMuted ? '#ff4444' : '#00ff00' }}
-            >
-              <span style={{ fontSize: '22px' }}>{isGlobalMuted ? '🔇' : '🔊'}</span>
-            </button>
-          </div>
-
-        </div>
       </div>
     </>
   );
@@ -510,7 +576,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       backgroundColor: '#000000',
       parent: 'phaser-container',
       disableVisibilityChange: true,
-      physics: { default: 'arcade', arcade: { debug: true, gravity: { y: 0 }, fps: 60, fixedStep: true } },
+      physics: { default: 'arcade', arcade: { debug: false, gravity: { y: 0 }, fps: 60, fixedStep: true } },
       scale: { mode: Phaser.Scale.NONE },
       scene: { preload, create, update }
     };
@@ -525,11 +591,78 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     let isExecuting = false, isWaiting = false;
     let shipsGroup, obstacleGroup, projectileGroup;
     let unsubscribeTurns = null;
+    let unsubscribeLiveTurns = null;
     let matchEnded = false;
     let unsubscribeSurrender = null;
     let timeLeft = TURN_TIME_LIMIT, timerEvent = null;
+    let authoritativeTurnEvents = [];
+    let authoritativeEventSeq = 0;
+    let lastProcessedEventSeq = 0;
 
-    let sfxShoot, sfxExplosion, sfxClick, sfxCrash;
+    let sfxClick;
+    let sfxPools = {};
+
+    function playSfxNow(scene, key, volume) {
+      try {
+        if (scene.sound?.context?.state === 'suspended') {
+          scene.sound.context.resume().catch(() => null);
+        }
+      } catch {
+        // Ignore audio context resume failures.
+      }
+
+      const pool = sfxPools[key];
+      if (pool && pool.items.length > 0) {
+        const chosen = pool.items.find(s => !s.isPlaying);
+        if (chosen) {
+          try {
+            chosen.setVolume(volume ?? pool.volume);
+            chosen.play();
+            return;
+          } catch {
+            // Ignore per-sound play errors.
+          }
+        }
+
+        // Pool lotado: cria voz temporaria sem cortar audio em andamento.
+        try {
+          const extra = scene.sound.add(key, { volume: volume ?? pool.volume });
+          extra.once('complete', () => {
+            try { extra.destroy(); } catch { /* ignore */ }
+          });
+          extra.play();
+          return;
+        } catch {
+          // Ignore temporary voice creation failures.
+        }
+      }
+      try {
+        scene.sound.play(key, { volume });
+      } catch {
+        // Ignore fallback play errors.
+      }
+    }
+
+    function createSfxPool(scene, key, volume, size = 6) {
+      const items = [];
+      for (let i = 0; i < size; i += 1) {
+        try {
+          const snd = scene.sound.add(key, { volume });
+          items.push(snd);
+        } catch {
+          // Ignore pool allocation failures.
+        }
+      }
+      return { items, cursor: 0, volume };
+    }
+
+    function initCombatSfxPools(scene) {
+      sfxPools = {
+        shoot: createSfxPool(scene, 'shoot', 0.3, 24),
+        explosion: createSfxPool(scene, 'explosion', 0.5, 16),
+        crash: createSfxPool(scene, 'crash', 0.6, 8)
+      };
+    }
 
     function preload() {
       this.load.image('bg', 'assets/background.png');
@@ -550,11 +683,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       scene.add.tileSprite(TOTAL_WIDTH / 2, PLAY_HEIGHT / 2, TOTAL_WIDTH, PLAY_HEIGHT, 'bg').setAlpha(1);
 
       try {
-        sfxShoot = scene.sound.add('shoot', { volume: 0.3 });
-        sfxExplosion = scene.sound.add('explosion', { volume: 0.5 });
         sfxClick = scene.sound.add('click', { volume: 0.5 });
-        sfxCrash = scene.sound.add('crash', { volume: 0.6 });
       } catch (e) { console.log("Erro de áudio Phaser", e); }
+      initCombatSfxPools(scene);
 
       const hudY = PLAY_HEIGHT;
       const hudBg = scene.add.graphics();
@@ -594,15 +725,14 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       mapData.forEach(pos => {
         const obs = obstacleGroup.create(pos.x, pos.y, 'asteroid_img');
         obs.setScale(0.12);
+        obs.refreshBody();
 
-        const radius = obs.displayWidth * 0.18;
+        const radius = obs.displayWidth * 0.31;
         obs.body.setCircle(radius);
 
         const offsetX = (obs.displayWidth / 2) - radius;
         const offsetY = (obs.displayHeight / 2) - radius;
         obs.body.setOffset(offsetX, offsetY);
-
-        obs.refreshBody();
       });
 
       let mySquadData, enemySquadData;
@@ -644,6 +774,18 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
           try { uiGroup.setVisible(false); } catch (e) { }
           try { staticHudGroup.setVisible(false); } catch (e) { }
         });
+
+        const liveTurnsRef = ref(db, `rooms/${roomId}/turnLive`);
+        unsubscribeLiveTurns = onValue(liveTurnsRef, (snapshot) => {
+          if (matchEnded || isHost) return;
+          const liveTurns = snapshot.val();
+          if (!liveTurns) return;
+          const currentT = turnRefValue.current;
+          const turnEvents = liveTurns[currentT];
+          if (!turnEvents) return;
+          const ordered = Object.values(turnEvents).sort((a, b) => (a?.seq ?? 0) - (b?.seq ?? 0));
+          applyAuthoritativeEvents(scene, ordered);
+        });
       }
 
       // ✅ FEEDBACK VISUAL (Texto + Flash) ATIVADO
@@ -651,17 +793,33 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (!projectile.active || !ship.active) return;
         if (projectile.ownerNetOwner === ship.netOwner) return;
 
-        const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
-        scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+        if (isTraining || isHost) {
+          const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
+          scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+          projectile.destroy();
 
-        projectile.destroy();
+          if (!isTraining && isHost && isExecuting) {
+            const hitX = ship.body?.center?.x ?? ship.x;
+            const hitY = ship.body?.center?.y ?? ship.y;
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'HITFX', x: projectile.x, y: projectile.y });
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'DMG', target: ship.netId, dmg: projectile.damage, x: hitX, y: hitY });
+          }
 
-        if (isTraining) {
+          const hpBefore = ship.hp;
           takeDamage(scene, ship, projectile.damage, true);
+          if (!isTraining && isHost && isExecuting && hpBefore > 0 && ship.hp <= 0) {
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'KILL', target: ship.netId, x: ship.x, y: ship.y });
+          }
           return;
         }
 
-        takeDamagePredicted(scene, ship, projectile.damage);
+        // Guest: feedback visual imediato, sem aplicar dano local.
+        const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
+        scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+        playSfxNow(scene, 'explosion', 0.35);
+        showPendingHitFX(scene, ship);
+        projectile.destroy();
+        return;
       });
 
       scene.physics.add.collider(projectileGroup, obstacleGroup, (projectile) => {
@@ -679,20 +837,47 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (a.hasCrashed || b.hasCrashed) return;
         if (String(a.netId) > String(b.netId)) return;
 
-        scene.cameras.main.shake(100, 0.01);
-        if (sfxCrash) sfxCrash.play();
+        if (isTraining || isHost) {
+          scene.cameras.main.shake(100, 0.01);
+          playSfxNow(scene, 'crash', 0.6);
 
-        a.hasCrashed = true; b.hasCrashed = true;
-        showFloatText(scene, (a.x + b.x) / 2, (a.y + b.y) / 2, t('CRASH_LABEL'), '#ffaa00');
+          a.hasCrashed = true; b.hasCrashed = true;
+          const crashX = (a.x + b.x) / 2;
+          const crashY = (a.y + b.y) / 2;
+          showFloatText(scene, crashX, crashY, t('CRASH_LABEL'), '#ffaa00');
 
-        if (isTraining) {
+          if (!isTraining && isHost) {
+            const ax = a.body?.center?.x ?? a.x;
+            const ay = a.body?.center?.y ?? a.y;
+            const bx = b.body?.center?.x ?? b.x;
+            const by = b.body?.center?.y ?? b.y;
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'CRASHFX', x: crashX, y: crashY });
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'DMG', target: a.netId, dmg: 20, x: ax, y: ay });
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'DMG', target: b.netId, dmg: 20, x: bx, y: by });
+          }
+
+          const hpBeforeA = a.hp;
+          const hpBeforeB = b.hp;
           takeDamage(scene, a, 20, true);
           takeDamage(scene, b, 20, true);
+          if (!isTraining && isHost && isExecuting && hpBeforeA > 0 && a.hp <= 0) {
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'KILL', target: a.netId, x: a.x, y: a.y });
+          }
+          if (!isTraining && isHost && isExecuting && hpBeforeB > 0 && b.hp <= 0) {
+            emitAuthoritativeEvent(turnRefValue.current, { type: 'KILL', target: b.netId, x: b.x, y: b.y });
+          }
           return;
         }
 
-        takeDamagePredicted(scene, a, 20);
-        takeDamagePredicted(scene, b, 20);
+        // Guest: feedback visual imediato, sem aplicar dano local.
+        scene.cameras.main.shake(100, 0.01);
+        playSfxNow(scene, 'crash', 0.6);
+        a.hasCrashed = true;
+        b.hasCrashed = true;
+        showPendingHitFX(scene, a);
+        showPendingHitFX(scene, b);
+        showFloatText(scene, (a.x + b.x) / 2, (a.y + b.y) / 2, t('CRASH_LABEL'), '#ffaa00');
+        return;
       });
 
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
@@ -733,160 +918,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       setupInputs(scene);
       startTimer(scene);
     }
-
-    // --- FUNÇÕES DETERMINÍSTICAS (RAYCASTING) ---
-
-    function rayCircleHit(ox, oy, dx, dy, cx, cy, r) {
-      const fx = ox - cx;
-      const fy = oy - cy;
-
-      const b = 2 * (fx * dx + fy * dy);
-      const c = (fx * fx + fy * fy) - (r * r);
-
-      const disc = b * b - 4 * c;
-      if (disc < 0) return null;
-
-      const sqrtDisc = Math.sqrt(disc);
-      const t1 = (-b - sqrtDisc) / 2;
-      const t2 = (-b + sqrtDisc) / 2;
-
-      let t = null;
-      if (t1 >= 0 && t2 >= 0) t = Math.min(t1, t2);
-      else if (t1 >= 0) t = t1;
-      else if (t2 >= 0) t = t2;
-
-      return t;
-    }
-
-    // ✅ HOST calcula o resultado (RayCircleHit + bala com mesmo raio do Phaser)
-     function computeHostTurnResult(scene, myData, enemyData) {
-      const events = [];
-      const allShips = [...playerSquad, ...enemySquad];
-      const pos = {};
-      
-      // Snapshot inicial
-      allShips.forEach(s => {
-        pos[s.netId] = { x: s.x, y: s.y, active: !!s.active, hp: s.hp };
-      });
-
-      const applyDmg = (targetNetId, dmg, hitX, hitY) => {
-        if (!pos[targetNetId] || !pos[targetNetId].active) return;
-        pos[targetNetId].hp -= dmg;
-        events.push({ type: 'DMG', target: targetNetId, dmg, x: hitX, y: hitY });
-        if (pos[targetNetId].hp <= 0) {
-          pos[targetNetId].active = false;
-          events.push({ type: 'KILL', target: targetNetId, x: hitX, y: hitY });
-        }
-      };
-
-      const processShooter = (shooterShip, planAttack) => {
-        if (!shooterShip.active || !planAttack) return;
-
-        const weaponId = planAttack.weapon || 'CANNON';
-        const weapon = WEAPONS[weaponId] || WEAPONS.CANNON;
-        const baseAngle = Phaser.Math.Angle.Between(shooterShip.x, shooterShip.y, planAttack.x, planAttack.y);
-        const angleOffsets = (weapon.type === 'SPREAD') ? [0, -0.2, 0.2] : [0];
-
-        angleOffsets.forEach((off) => {
-          const ang = baseAngle + off;
-          const dx = Math.cos(ang);
-          const dy = Math.sin(ang);
-
-          // Origem do tiro (igual ao visual)
-          const startX = shooterShip.x + (dx * 45);
-          const startY = shooterShip.y + (dy * 45);
-          const endX = startX + (dx * 1500);
-          const endY = startY + (dy * 1500);
-
-          const enemies = (shooterShip.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
-            ? enemySquad : playerSquad;
-
-          let bestHit = null;
-
-          // 1. Checa Naves (Hitbox Honesta)
-          enemies.forEach(tgt => {
-            if (!tgt.active || !tgt.body) return;
-            
-            // 🔥 AQUI ESTÁ O SEGREDO: O servidor usa o centro da BOLA ROXA (tgt.body.center)
-            // Como corrigimos o spawnShip, a bola roxa agora está em cima da nave.
-            const dist = distancePointToLineSegment(tgt.body.center.x, tgt.body.center.y, startX, startY, endX, endY);
-            
-            // Se a distância for menor que o raio da bola roxa = ACERTOU
-            if (dist <= tgt.body.radius) { 
-               const distToShooter = Phaser.Math.Distance.Between(startX, startY, tgt.body.center.x, tgt.body.center.y);
-               if (!bestHit || distToShooter < bestHit.dist) {
-                 bestHit = { dist: distToShooter, type: 'SHIP', target: tgt, x: tgt.body.center.x, y: tgt.body.center.y };
-               }
-            }
-          });
-
-          // 2. Checa Asteroides (Bloqueio)
-          obstacleGroup.getChildren().forEach(obs => {
-             if(!obs.body) return;
-             const dist = distancePointToLineSegment(obs.body.center.x, obs.body.center.y, startX, startY, endX, endY);
-             if (dist <= obs.body.radius) {
-                const distToShooter = Phaser.Math.Distance.Between(startX, startY, obs.x, obs.y);
-                if (!bestHit || distToShooter < bestHit.dist) {
-                   bestHit = { dist: distToShooter, type: 'OBSTACLE', target: obs, x: obs.x, y: obs.y };
-                }
-             }
-          });
-
-          if (bestHit) {
-             if (bestHit.type === 'SHIP') {
-                applyDmg(bestHit.target.netId, weapon.damage, bestHit.x, bestHit.y);
-             } 
-             events.push({ type: 'HITFX', x: bestHit.x, y: bestHit.y });
-          }
-        });
-      };
-
-      // Processa planos
-      playerSquad.forEach(s => {
-        const p = myData.find(m => m.index === s.squadIndex);
-        if (p?.attack) processShooter(s, p.attack);
-      });
-      enemySquad.forEach(s => {
-        const p = enemyData.find(m => m.index === s.squadIndex);
-        if (p?.attack) processShooter(s, p.attack);
-      });
-
-      // Checagem de Colisão (Crash)
-      const plannedPos = {};
-      allShips.forEach(s => {
-        const plan = (s.netOwner === (isTraining ? 'HOST' : (isHost ? 'HOST' : 'GUEST')))
-            ? myData.find(p => p.index === s.squadIndex)
-            : enemyData.find(p => p.index === s.squadIndex);
-        if (plan?.move && s.active) plannedPos[s.netId] = { x: plan.move.x, y: plan.move.y };
-        else plannedPos[s.netId] = { x: s.x, y: s.y };
-      });
-
-      playerSquad.forEach(a => {
-        if (!a.active) return;
-        enemySquad.forEach(b => {
-          if (!b.active) return;
-          const pa = plannedPos[a.netId];
-          const pb = plannedPos[b.netId];
-          const dist = Phaser.Math.Distance.Between(pa.x, pa.y, pb.x, pb.y);
-          
-          if (dist <= (a.body.radius + b.body.radius)) {
-            applyDmg(a.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
-            applyDmg(b.netId, 20, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2);
-            events.push({ type: 'CRASHFX', x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
-          }
-        });
-      });
-
-      const finalHpState = {};
-      allShips.forEach(s => {
-        const st = pos[s.netId];
-        finalHpState[s.netId] = st ? st.hp : s.hp;
-      });
-
-      return { hpState: finalHpState, events, at: Date.now() };
-    }
-
-    // --- FIM FUNÇÕES DETERMINÍSTICAS ---
 
     function startTimer(scene) {
       if (timerEvent) timerEvent.remove();
@@ -1011,6 +1042,61 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       [...playerSquad, ...enemySquad].forEach(s => { s.predictedHp = null; });
     }
 
+    function findShipByNetId(netId) {
+      return [...playerSquad, ...enemySquad].find(s => s.netId === netId);
+    }
+
+    function emitAuthoritativeEvent(turnNumber, payload) {
+      if (isTraining || !isHost) return;
+      authoritativeEventSeq += 1;
+      const ev = { ...payload, seq: authoritativeEventSeq };
+      authoritativeTurnEvents.push(ev);
+      set(ref(db, `rooms/${roomId}/turnLive/${turnNumber}/${authoritativeEventSeq}`), ev).catch(() => { });
+    }
+
+    function applyAuthoritativeEvents(scene, events) {
+      if (!Array.isArray(events)) return;
+
+      events.forEach((ev) => {
+        if (!ev) return;
+        if (ev.seq && ev.seq <= lastProcessedEventSeq) return;
+        if (ev.seq) lastProcessedEventSeq = ev.seq;
+
+        if (ev.type === 'HITFX') {
+          const boom = scene.add.circle(ev.x, ev.y, 15, 0xffaa00);
+          scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+          return;
+        }
+
+        if (ev.type === 'CRASHFX') {
+          scene.cameras.main.shake(100, 0.01);
+          showFloatText(scene, ev.x, ev.y, t('CRASH_LABEL'), '#ffaa00');
+          return;
+        }
+
+        if (ev.type === 'DMG') {
+          const ship = findShipByNetId(ev.target);
+          if (!ship) return;
+          ship.pendingHit = false;
+          ship.setTint(0xff0000);
+          scene.time.delayedCall(90, () => { if (ship.active) ship.clearTint(); });
+          showFloatText(scene, ship.x, ship.y - 40, `-${ev.dmg}`, '#ff0000');
+          return;
+        }
+
+        if (ev.type === 'KILL') {
+          const ship = findShipByNetId(ev.target);
+          if (!ship || !ship.active) return;
+          playSfxNow(scene, 'explosion', 0.5);
+          const boom = scene.add.circle(ev.x ?? ship.x, ev.y ?? ship.y, 50, 0xffffff);
+          scene.tweens.add({ targets: boom, scale: 3, alpha: 0, duration: 400, onComplete: () => boom.destroy() });
+          ship.body.enable = false;
+          ship.setActive(false).setVisible(false);
+          if (selectedShip === ship) deselectAll();
+        }
+      });
+    }
+
     function applyHpState(hpState) {
       [...playerSquad, ...enemySquad].forEach(ship => {
         const v = hpState?.[ship.netId];
@@ -1030,6 +1116,14 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       });
     }
 
+    function buildCurrentHpState() {
+      const hpState = {};
+      [...playerSquad, ...enemySquad].forEach((ship) => {
+        hpState[ship.netId] = ship.hp;
+      });
+      return hpState;
+    }
+
     async function waitTurnResult(roomIdLocal, turnNumber) {
       const resultRef = ref(db, `rooms/${roomIdLocal}/turnResults/${turnNumber}`);
       return await new Promise((resolve) => {
@@ -1044,6 +1138,13 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
     async function runTurnResolution(scene, turnData) {
       if (matchEnded) return;
+      try {
+        if (scene.sound?.context?.state === 'suspended') {
+          await scene.sound.context.resume();
+        }
+      } catch {
+        // Ignore audio context resume failures.
+      }
 
       isExecuting = true;
       isWaiting = true;
@@ -1051,6 +1152,9 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       stopTimer();
 
       clearPredictions();
+      authoritativeTurnEvents = [];
+      authoritativeEventSeq = 0;
+      lastProcessedEventSeq = 0;
       if (selectedShip) deselectAll();
       uiGroup.setVisible(false);
 
@@ -1095,20 +1199,19 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       });
 
       let hostResult = null;
-      if (!isTraining && isHost) {
-        const currentT = turnRefValue.current;
-        hostResult = computeHostTurnResult(scene, myData, enemyData);
-        await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
-      }
-
       await new Promise(r => setTimeout(r, 2500));
 
       if (!isTraining) {
         const currentT = turnRefValue.current;
         if (isHost) {
-          applyHpState(hostResult?.hpState);
+          await set(ref(db, `rooms/${roomId}/turnLive/${currentT}`), null);
+          lastProcessedEventSeq = authoritativeEventSeq;
+          hostResult = { hpState: buildCurrentHpState(), events: authoritativeTurnEvents, at: Date.now() };
+          await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
+          applyHpState(hostResult.hpState);
         } else {
           const data = await waitTurnResult(roomId, currentT);
+          applyAuthoritativeEvents(scene, data?.events);
           applyHpState(data?.hpState);
         }
       }
@@ -1151,14 +1254,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       attackHandle.setVisible(false);
       uiGroup.removeAll(true);
       updateHUDInfo();
-    }
-
-    function distancePointToLineSegment(px, py, x1, y1, x2, y2) {
-      const l2 = Phaser.Math.Distance.Squared(x1, y1, x2, y2);
-      if (l2 === 0) return Phaser.Math.Distance.Between(px, py, x1, y1);
-      let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-      t = Math.max(0, Math.min(1, t));
-      return Phaser.Math.Distance.Between(px, py, x1 + t * (x2 - x1), y1 + t * (y2 - y1));
     }
 
     function updateHUDInfo() {
@@ -1238,7 +1333,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     }
 
     function fireWeapon(scene, shooter, tx, ty) {
-      if (sfxShoot) sfxShoot.play();
+      playSfxNow(scene, 'shoot', 0.3);
       const weapon = shooter.weapon;
       const baseAngle = Phaser.Math.Angle.Between(shooter.x, shooter.y, tx, ty);
 
@@ -1278,9 +1373,10 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
     function takeDamage(scene, ship, dmg, allowKill) {
       ship.hp -= dmg;
+      ship.pendingHit = false;
       showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff0000');
       if (ship.hp <= 0 && allowKill) {
-        if (sfxExplosion) sfxExplosion.play();
+        playSfxNow(scene, 'explosion', 0.5);
         const boom = scene.add.circle(ship.x, ship.y, 50, 0xffffff);
         scene.tweens.add({ targets: boom, scale: 3, alpha: 0, duration: 400, onComplete: () => boom.destroy() });
         ship.body.enable = false;
@@ -1292,10 +1388,21 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       }
     }
 
-    function takeDamagePredicted(scene, ship, dmg) {
-      showFloatText(scene, ship.x, ship.y - 40, `-${dmg}`, '#ff6666');
-      ship.setTint(0xff6666);
-      scene.time.delayedCall(80, () => { if (ship.active) ship.clearTint(); });
+    function showPendingHitFX(scene, ship) {
+      if (!ship || !ship.active) return;
+      ship.pendingHit = true;
+      ship.pendingHitUntil = Date.now() + 400;
+
+      const smoke = scene.add.circle(ship.x, ship.y, 16, 0x999999, 0.35);
+      scene.tweens.add({
+        targets: smoke,
+        x: ship.x + Phaser.Math.Between(-12, 12),
+        y: ship.y + Phaser.Math.Between(-14, -6),
+        scale: 1.8,
+        alpha: 0,
+        duration: 350,
+        onComplete: () => smoke.destroy()
+      });
     }
 
     function checkRaycast(x1, y1, x2, y2) {
@@ -1356,9 +1463,22 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         return;
       }
 
+      const renderPendingHit = (ship) => {
+        if (!ship.pendingHit) return;
+        const until = ship.pendingHitUntil || 0;
+        if (Date.now() >= until) {
+          ship.pendingHit = false;
+          if (ship.active) ship.clearTint();
+          return;
+        }
+        if (Math.floor(Date.now() / 80) % 2 === 0) ship.setTintFill(0xffffff);
+        else ship.clearTint();
+      };
+
       [...playerSquad].forEach(ship => {
         if (!ship.active) return;
         drawHP(ship);
+        renderPendingHit(ship);
 
         if (ship.plannedMove) {
           graphics.lineStyle(2, 0x00ff00, 0.8);
@@ -1389,11 +1509,16 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
       });
 
-      [...enemySquad].forEach(ship => { if (ship.active) drawHP(ship); });
+      [...enemySquad].forEach(ship => {
+        if (!ship.active) return;
+        drawHP(ship);
+        renderPendingHit(ship);
+      });
     }
 
     return () => {
       if (unsubscribeTurns) unsubscribeTurns();
+      if (unsubscribeLiveTurns) unsubscribeLiveTurns();
       if (unsubscribeSurrender) unsubscribeSurrender();
       if (gameRef.current) {
         gameRef.current.destroy(true);
@@ -1407,6 +1532,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
 const styles = {
   backgroundWrapper: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, #1a1a2e 0%, #000000 100%)' },
+  musicDock: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#0a141e', padding: '6px 12px', borderRadius: '20px', border: '2px solid #00ccff', boxShadow: '0 0 12px rgba(0, 204, 255, 0.25), inset 0 0 8px rgba(0,0,0,0.45)', zIndex: 9999, marginBottom: 8 },
   gameContainer: { width: `${TOTAL_WIDTH}px`, height: `${TOTAL_HEIGHT}px`, position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', background: '#000', border: '1px solid #333' },
   menuBox: { width: '100%', height: '100%', backgroundImage: 'url(assets/intro.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 40 },
   menuContent: { width: '100%', padding: '20px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center' },
