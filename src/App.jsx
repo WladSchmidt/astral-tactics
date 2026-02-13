@@ -244,10 +244,11 @@ export default function App() {
       if (remoteVersion > roomMatchVersion && !rematchResolvedRef.current) {
         rematchResolvedRef.current = true;
         setRoomMatchVersion(remoteVersion);
+        setMySquad([]);
         setGameResult(null);
         setStatusMsg('');
         setRunId(prev => prev + 1);
-        setGameState('PLAYING');
+        setGameState('MENU');
         return;
       }
 
@@ -264,6 +265,8 @@ export default function App() {
             matchVersion: nextVersion,
             turn: 1,
             map: newMap,
+            hostSquad: null,
+            guestSquad: null,
             turns: null,
             turnResults: null,
             turnLive: null,
@@ -665,6 +668,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         // Guest: feedback visual imediato, sem aplicar dano local.
         const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
         scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+        playSfxNow(scene, 'explosion', 0.35);
         showPendingHitFX(scene, ship);
         projectile.destroy();
         return;
@@ -914,7 +918,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (ev.type === 'HITFX') {
           const boom = scene.add.circle(ev.x, ev.y, 15, 0xffaa00);
           scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
-          playSfxNow(scene, 'explosion', 0.35);
           return;
         }
 
