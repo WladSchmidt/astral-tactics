@@ -1,162 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Phaser from 'phaser';
+import AudioDock from './components/AudioDock';
+import LanguageSwitcher from './components/LanguageSwitcher';
+import LobbyScreen from './components/LobbyScreen';
+import SquadMenuScreen from './components/SquadMenuScreen';
+import GameOverOverlay from './components/GameOverOverlay';
+import styles from './styles/appStyles';
+import {
+  TOTAL_WIDTH,
+  TOTAL_HEIGHT,
+  HUD_HEIGHT,
+  PLAY_HEIGHT,
+  TURN_TIME_LIMIT,
+  MUSIC_TRACKS,
+  SHIP_STATS,
+  WEAPONS,
+  UI_THEME,
+  generateMapData
+} from './game/constants';
+import { TEXTS } from './game/texts';
 
 // 🔥 FIREBASE
 import { db, auth } from './firebaseConfig';
 import { ref, set, get, onValue, update } from 'firebase/database';
 import { signInAnonymously } from 'firebase/auth';
 
-// --- DIMENSÕES FIXAS ---
-const TOTAL_WIDTH = 1024;
-const TOTAL_HEIGHT = 768;
-const HUD_HEIGHT = 140;
-const PLAY_HEIGHT = TOTAL_HEIGHT - HUD_HEIGHT;
-const TURN_TIME_LIMIT = 25;
 
-// --- LISTA DE MÚSICAS ---
-const MUSIC_TRACKS = [
-  'assets/audio/music_1.mp3',
-  'assets/audio/music_2.mp3',
-  'assets/audio/music_3.mp3'
-];
 
-// --- SISTEMA DE TRADUÇÃO ---
-const TEXTS = {
-  PT: {
-    MAIN_TITLE: "PREPARE-SE PARA A BATALHA",
-    MAIN_SUBTITLE: "DERROTE A IA OU DESAFIE UM AMIGO",
-    BTN_TRAINING: "⚔️ TREINO SOLO (VS IA)",
-    HOST_TITLE: "CRIAR SALA",
-    HOST_BTN: "CRIAR",
-    GUEST_TITLE: "ENTRAR EM SALA",
-    GUEST_BTN: "ENTRAR",
-    INPUT_PLACEHOLDER: "CÓDIGO",
-    STATUS_CREATING: "Criando sala...",
-    STATUS_CREATED: "SALA CRIADA: {0} (Aguardando P2...)",
-    STATUS_P2_CONNECTED: "JOGADOR 2 CONECTADO!",
-    STATUS_JOINING: "Entrando...",
-    STATUS_NOT_FOUND: "Sala não encontrada!",
-    STATUS_ERROR: "Erro: ",
-    ROOM_LABEL: "SALA:",
-    SELECT_INSTRUCT: "ESCOLHA 3 NAVES",
-    BTN_READY: "CONFIRMAR FROTA",
-    STATUS_WAITING: "AGUARDANDO OPONENTE...",
-    TURN_YOURS: "SUA VEZ",
-    TURN_OPP: "VEZ DO OPONENTE",
-    SELECT_SHIP: "SELECIONE UMA NAVE",
-    BTN_EXECUTE: "EXECUTAR",
-    BTN_MOVE: "X MOVER",
-    BTN_ATK: "X ATACAR",
-    TIMER_LABEL: "TEMPO: ",
-    WAITING_LABEL: "AGUARDANDO...",
-    EXECUTING_LABEL: "PROCESSANDO...",
-    BLOCKED_LABEL: "BLOQUEADO",
-    CRASH_LABEL: "COLISÃO!",
-    BTN_SURRENDER: "🏳️ RENDER-SE",
-    SURRENDER_CONFIRM: "Tem certeza? Isso contará como DERROTA.",
-    VICTORY: "VITÓRIA",
-    DEFEAT: "DERROTA",
-    DRAW: "EMPATE",
-    BTN_RESTART: "REINICIAR",
-    REMATCH_SENT: "Pedido de nova partida enviado. Aguardando adversário...",
-    REMATCH_OPP: "O adversário quer nova partida. Clique em REINICIAR para aceitar.",
-    REMATCH_STARTING: "Ambos aceitaram. Iniciando nova partida...",
-    BTN_MENU: "MENU PRINCIPAL",
-    DESC_FLUX: "Alta velocidade, baixa vida.",
-    DESC_VECTOR: "Status balanceados.",
-    DESC_COLOSSUS: "Tanque pesado, muito lento."
-  },
-  EN: {
-    MAIN_TITLE: "PREPARE FOR BATTLE",
-    MAIN_SUBTITLE: "DEFEAT THE AI OR CHALLENGE A FRIEND",
-    BTN_TRAINING: "⚔️ SOLO TRAINING (VS AI)",
-    HOST_TITLE: "HOST GAME",
-    HOST_BTN: "CREATE",
-    GUEST_TITLE: "JOIN GAME",
-    GUEST_BTN: "JOIN",
-    INPUT_PLACEHOLDER: "CODE",
-    STATUS_CREATING: "Creating room...",
-    STATUS_CREATED: "ROOM CREATED: {0} (Waiting P2...)",
-    STATUS_P2_CONNECTED: "PLAYER 2 CONNECTED!",
-    STATUS_JOINING: "Joining...",
-    STATUS_NOT_FOUND: "Room not found!",
-    STATUS_ERROR: "Error: ",
-    ROOM_LABEL: "ROOM:",
-    SELECT_INSTRUCT: "SELECT 3 SHIPS",
-    BTN_READY: "CONFIRM FLEET",
-    STATUS_WAITING: "WAITING FOR OPPONENT...",
-    TURN_YOURS: "YOUR TURN",
-    TURN_OPP: "OPPONENT'S TURN",
-    SELECT_SHIP: "SELECT A SHIP",
-    BTN_EXECUTE: "EXECUTE",
-    BTN_MOVE: "X MOVE",
-    BTN_ATK: "X ATTACK",
-    TIMER_LABEL: "TIME: ",
-    WAITING_LABEL: "WAITING...",
-    EXECUTING_LABEL: "EXECUTING...",
-    BLOCKED_LABEL: "BLOCKED",
-    CRASH_LABEL: "CRASH!",
-    BTN_SURRENDER: "🏳️ SURRENDER",
-    SURRENDER_CONFIRM: "Are you sure? This counts as DEFEAT.",
-    VICTORY: "VICTORY",
-    DEFEAT: "DEFEAT",
-    DRAW: "DRAW",
-    BTN_RESTART: "RESTART",
-    REMATCH_SENT: "Rematch request sent. Waiting for opponent...",
-    REMATCH_OPP: "Opponent wants a rematch. Click RESTART to accept.",
-    REMATCH_STARTING: "Both accepted. Starting a new match...",
-    BTN_MENU: "MAIN MENU",
-    DESC_FLUX: "High speed, low HP.",
-    DESC_VECTOR: "Balanced stats.",
-    DESC_COLOSSUS: "Heavy tank, very slow."
-  }
-};
-
-// --- DADOS DAS NAVES (V52: HITBOX GRANDE & OFFSETS) ---
-// ✅ Mantemos seus valores (do jeito que você gosta visualmente),
-// mas a lógica do offset no body foi corrigida (sempre base + manual).
-const SHIP_STATS = {
-  FLUX: { 
-    id: 'FLUX', name: 'FLUX', descKey: 'DESC_FLUX', hp: 90, speed: 155, color: 0x00ffff, radius: 24, moveRange: 385, sprite: 'flux_img', 
-    hitRadius: 130,
-    hitOffset: { x: 170, y: 200 } 
-  },
-  VECTOR: { 
-    id: 'VECTOR', name: 'VECTOR', descKey: 'DESC_VECTOR', hp: 120, speed: 110, color: 0x00ff00, radius: 28, moveRange: 310, sprite: 'vector_img', 
-    hitRadius: 140, 
-    hitOffset: { x: 140, y: 180 } 
-  },
-  COLOSSUS: { 
-    id: 'COLOSSUS', name: 'COLOSSUS', descKey: 'DESC_COLOSSUS', hp: 180, speed: 75, color: 0xffaa00, radius: 38, moveRange: 220, sprite: 'colossus_img', 
-    hitRadius: 150, 
-    hitOffset: { x: 150, y: 180 } 
-  }
-};
-
-const SHIP_IMAGES = { 'flux_img': 'assets/Flux.png', 'vector_img': 'assets/Vector.png', 'colossus_img': 'assets/Colossus.png' };
-
-const WEAPONS = {
-  CANNON: { id: 'CANNON', name: 'CANNON', type: 'SINGLE', damage: 40, speed: 255, color: 0xffff00, radius: 6 },
-  FLAK: { id: 'FLAK', name: 'FLAK', type: 'SPREAD', damage: 15, speed: 340, color: 0xff4400, radius: 4 }
-};
-
-const generateMapData = () => {
-  const obstacles = [];
-  let attempts = 0;
-  while (obstacles.length < 5 && attempts < 100) {
-    attempts++;
-    const x = Math.floor(Math.random() * (TOTAL_WIDTH - 200)) + 100;
-    const y = Math.floor(Math.random() * (PLAY_HEIGHT - 300)) + 150;
-
-    let tooClose = false;
-    for (let obs of obstacles) {
-      const dist = Math.sqrt(Math.pow(x - obs.x, 2) + Math.pow(y - obs.y, 2));
-      if (dist < 130) { tooClose = true; break; }
-    }
-    if (!tooClose) obstacles.push({ x, y });
-  }
-  return obstacles;
-};
 
 export default function App() {
   const [lang, setLang] = useState('PT');
@@ -210,6 +80,7 @@ export default function App() {
   const handleNextTrack = () => { setCurrentTrackIndex((prev) => (prev + 1) % MUSIC_TRACKS.length); };
   const handlePrevTrack = () => { setCurrentTrackIndex((prev) => (prev - 1 + MUSIC_TRACKS.length) % MUSIC_TRACKS.length); };
   const handleMusicEnded = () => { handleNextTrack(); };
+
 
   // SFX Click Global
   const playClick = () => {
@@ -408,6 +279,18 @@ export default function App() {
     return () => unsubscribe();
   }, [roomId, isTraining, gameState, isHost, roomMatchVersion, t]);
 
+  const addShipToSquad = (shipId) => {
+    playClick();
+    if (mySquad.length < 3) setMySquad([...mySquad, shipId]);
+  };
+
+  const removeShipFromSquad = (idx) => {
+    playClick();
+    const ns = [...mySquad];
+    ns.splice(idx, 1);
+    setMySquad(ns);
+  };
+
   return (
     <>
       <style>{`
@@ -415,8 +298,6 @@ export default function App() {
         * { box-sizing: border-box; user-select: none; }
         .ship-card:hover { transform: translateY(-5px); border-color: #00ffff !important; box-shadow: 0 0 20px rgba(0, 255, 255, 0.4) !important; }
         input::placeholder { color: #555; }
-        .music-btn { background: none; border: none; font-size: 14px; cursor: pointer; color: #00ccff; padding: 2px 4px; opacity: 0.9; transition: 0.2s; display: flex; align-items: center; justify-content: center; line-height: 1; }
-        .music-btn:hover { opacity: 1; transform: scale(1.1); color: #fff; text-shadow: 0 0 8px #00ccff; }
       `}</style>
 
       <audio
@@ -427,138 +308,93 @@ export default function App() {
       />
 
       <div style={styles.backgroundWrapper}>
-        <div style={styles.musicDock}>
-          {!isGlobalMuted && (
+        <AudioDock
+          isGlobalMuted={isGlobalMuted}
+          isMusicPlaying={isMusicPlaying}
+          onPrevTrack={handlePrevTrack}
+          onTogglePlay={() => setIsMusicPlaying(!isMusicPlaying)}
+          onNextTrack={handleNextTrack}
+          onToggleMute={() => setIsGlobalMuted(!isGlobalMuted)}
+        />
+        <div style={styles.gameContainer}>
+          {gameState === 'LOBBY' && <LanguageSwitcher lang={lang} setLang={setLang} />}
+
+          {gameState === 'LOBBY' && (
+            <LobbyScreen
+              t={t}
+              styles={styles}
+              joinCode={joinCode}
+              setJoinCode={setJoinCode}
+              statusMsg={statusMsg}
+              onStartTraining={startTraining}
+              onCreateRoom={createRoom}
+              onJoinRoom={joinRoom}
+            />
+          )}
+
+          {gameState === 'MENU' && (
+            <SquadMenuScreen
+              t={t}
+              styles={styles}
+              roomId={roomId}
+              mySquad={mySquad}
+              statusMsg={statusMsg}
+              onAddShip={addShipToSquad}
+              onRemoveShip={removeShipFromSquad}
+              onLockInSquad={lockInSquad}
+            />
+          )}
+
+          {gameState === 'PLAYING' && (
             <>
-              <button className="music-btn" onClick={handlePrevTrack} title="Anterior">
-                <span>{'<<'}</span>
-              </button>
-              <button className="music-btn" onClick={() => setIsMusicPlaying(!isMusicPlaying)} title="Play/Pause">
-                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{isMusicPlaying ? '||' : '>'}</span>
-              </button>
-              <button className="music-btn" onClick={handleNextTrack} title="Pr�xima">
-                <span>{'>>'}</span>
-              </button>
-              <div style={{ width: 1, height: 16, background: '#00ccff', margin: '0 4px', opacity: 0.3 }}></div>
+              <div style={{ position: 'absolute', top: 15, right: 15, zIndex: 1000 }}>
+                <button
+                  style={{ background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                  onClick={async () => {
+                    if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
+                    if (isTraining) { handleGameOver('DEFEAT'); return; }
+                    try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); }
+                    catch (err) { alert('Erro: ' + err.message); }
+                  }}
+                >
+                  {t('BTN_SURRENDER')}
+                </button>
+              </div>
+
+              <PhaserGame
+                key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}`}
+                roomId={roomId}
+                isHost={isHost}
+                isTraining={isTraining}
+                mySquadList={mySquad}
+                onGameOver={handleGameOver}
+                onExit={backToMenu}
+                t={t}
+                isGlobalMuted={isGlobalMuted}
+              />
             </>
           )}
-          <button
-            className="music-btn"
-            onClick={() => setIsGlobalMuted(!isGlobalMuted)}
-            title="Master Mute"
-            style={{ color: isGlobalMuted ? '#ff4444' : '#00ff00' }}
-          >
-            <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{isGlobalMuted ? 'MUTED' : 'SOUND'}</span>
-          </button>
+
+          {gameState === 'GAMEOVER' && (
+            <GameOverOverlay
+              t={t}
+              styles={styles}
+              gameResult={gameResult}
+              getResultColor={getResultColor}
+              onRestart={restartGame}
+              onBackToMenu={backToMenu}
+              isTraining={isTraining}
+              statusMsg={statusMsg}
+            />
+          )}
         </div>
-        <div style={styles.gameContainer}>
-            <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 9999, display: 'flex', gap: 5, background: 'rgba(0,0,0,0.5)', padding: 5, borderRadius: 5, border: '1px solid #333' }}>
-              <button onClick={() => setLang('PT')} style={{ color: lang === 'PT' ? '#00ff00' : '#888', fontWeight: 'bold', cursor: 'pointer', background: 'none', border: 'none', fontSize: '14px' }}>PT</button>
-              <div style={{ width: 1, background: '#555' }}></div>
-              <button onClick={() => setLang('EN')} style={{ color: lang === 'EN' ? '#00ff00' : '#888', fontWeight: 'bold', cursor: 'pointer', background: 'none', border: 'none', fontSize: '14px' }}>EN</button>
-            </div>
-
-            {gameState === 'LOBBY' && (
-              <div style={styles.menuBox}>
-                <div style={styles.menuContent}>
-                  <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
-                  <p style={{ color: '#00ccff', marginBottom: 30, fontSize: '1.2rem', textShadow: '0 0 10px #00ccff' }}>{t('MAIN_SUBTITLE')}</p>
-                  <button style={{ ...styles.btn, background: '#444', width: '100%', marginBottom: 30, border: '1px solid #666' }} onClick={startTraining}>{t('BTN_TRAINING')}</button>
-                  <div style={{ display: 'flex', gap: 40 }}>
-                    <div style={styles.lobbyBox}>
-                      <h3 style={{ color: '#fff' }}>{t('HOST_TITLE')}</h3>
-                      <button style={styles.btn} onClick={createRoom}>{t('HOST_BTN')}</button>
-                    </div>
-                    <div style={styles.lobbyBox}>
-                      <h3 style={{ color: '#fff' }}>{t('GUEST_TITLE')}</h3>
-                      <input type="text" maxLength={4} style={styles.input} value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} placeholder={t('INPUT_PLACEHOLDER')} />
-                      <button style={styles.btn} onClick={joinRoom}>{t('GUEST_BTN')}</button>
-                    </div>
-                  </div>
-                  <p style={{ marginTop: 20, color: '#ffaa00', fontSize: 14, fontWeight: 'bold' }}>{statusMsg}</p>
-                </div>
-              </div>
-            )}
-
-            {gameState === 'MENU' && (
-              <div style={styles.menuBox}>
-                <div style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: 8, border: '1px solid #00ccff' }}>
-                  <span style={{ color: '#888', fontSize: 12 }}>{t('ROOM_LABEL')}</span> <span style={{ color: '#00ccff', fontSize: 20, fontWeight: 'bold' }}>{roomId}</span>
-                </div>
-                <div style={styles.menuContent}>
-                  <div style={styles.instructionsBox}><p style={{ margin: 0, color: '#00ccff', fontWeight: 'bold' }}>{t('SELECT_INSTRUCT')}</p></div>
-                  <div style={styles.cardRow}>
-                    {Object.values(SHIP_STATS).map(ship => (
-                      <div key={ship.id} className="ship-card" style={styles.card} onClick={() => { playClick(); if (mySquad.length < 3) setMySquad([...mySquad, ship.id]); }}>
-                        <img src={SHIP_IMAGES[ship.sprite]} alt={ship.name} style={styles.cardImage} />
-                        <strong style={{ fontSize: '1rem', color: '#fff', display: 'block' }}>{ship.name}</strong>
-                        <div style={styles.statLine}>HP: {ship.hp} | SPD: {ship.speed}</div>
-                        <div style={{ fontSize: '10px', color: '#888', marginTop: 5 }}>{t(ship.descKey)}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={styles.slotsContainer}>
-                    {mySquad.map((id, idx) => (
-                      <div key={idx} style={styles.slotActive} onClick={() => { playClick(); const ns = [...mySquad]; ns.splice(idx, 1); setMySquad(ns); }}>{SHIP_STATS[id].name} ✖</div>
-                    ))}
-                  </div>
-                  <button disabled={mySquad.length !== 3} style={{ ...styles.startBtn, opacity: mySquad.length === 3 ? 1 : 0.5 }} onClick={lockInSquad}>{t('BTN_READY')}</button>
-                  <p style={{ marginTop: 10, color: '#ffaa00' }}>{statusMsg}</p>
-                </div>
-              </div>
-            )}
-
-            {gameState === 'PLAYING' && (
-              <>
-                <div style={{ position: 'absolute', top: 15, right: 15, zIndex: 1000 }}>
-                  <button
-                    style={{ background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
-                    onClick={async () => {
-                      if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
-                      if (isTraining) { handleGameOver("DEFEAT"); return; }
-                      try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); }
-                      catch (err) { alert("Erro: " + err.message); }
-                    }}
-                  >
-                    {t('BTN_SURRENDER')}
-                  </button>
-                </div>
-
-                <PhaserGame
-                  key={`${runId}-${roomId}-${isTraining ? 'T' : 'M'}-${lang}`}
-                  roomId={roomId}
-                  isHost={isHost}
-                  isTraining={isTraining}
-                  mySquadList={mySquad}
-                  onGameOver={handleGameOver}
-                  onExit={backToMenu}
-                  lang={lang}
-                  t={t}
-                  isGlobalMuted={isGlobalMuted}
-                />
-              </>
-            )}
-
-            {gameState === 'GAMEOVER' && (
-              <div style={styles.overlay}>
-                <h1 style={{ ...styles.title, color: getResultColor() }}>{t(gameResult)}</h1>
-                <div style={{ display: 'flex', gap: 20, marginTop: 30 }}>
-                  <button style={styles.btn} onClick={restartGame}>{t('BTN_RESTART')}</button>
-                  <button style={{ ...styles.btn, background: '#444' }} onClick={backToMenu}>{t('BTN_MENU')}</button>
-                </div>
-                {!isTraining && (
-                  <p style={{ marginTop: 14, color: '#ffaa00', fontWeight: 'bold' }}>{statusMsg}</p>
-                )}
-              </div>
-            )}
-          </div>
       </div>
     </>
   );
 }
 
 // --- PHASER GAME COMPONENT ---
-const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, lang, t, isGlobalMuted }) => {
+const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExit, t, isGlobalMuted }) => {
   const gameRef = useRef(null);
   const turnRefValue = useRef(1);
 
@@ -689,18 +525,20 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
       const hudY = PLAY_HEIGHT;
       const hudBg = scene.add.graphics();
-      hudBg.fillStyle(0x151515, 1);
+      hudBg.fillStyle(UI_THEME.hud.panelFill, 0.9);
       hudBg.fillRect(0, hudY, TOTAL_WIDTH, HUD_HEIGHT);
-      hudBg.lineStyle(2, 0x0088ff, 0.5);
+      hudBg.lineStyle(2, UI_THEME.hud.panelLine, 0.9);
       hudBg.lineBetween(0, hudY, TOTAL_WIDTH, hudY);
+      hudBg.lineStyle(1, UI_THEME.hud.panelGlow, 0.35);
+      hudBg.lineBetween(0, hudY + 2, TOTAL_WIDTH, hudY + 2);
 
       const textX = 20; const startY = PLAY_HEIGHT + 15; const lineHeight = 22;
-      turnText = scene.add.text(textX, startY, t('TURN_YOURS'), { font: 'bold 20px Arial', fill: '#00ff00' }).setDepth(100);
-      txtName = scene.add.text(textX, startY + 30, t('SELECT_SHIP'), { font: 'bold 18px Arial', fill: '#ffffff' }).setDepth(100);
-      txtHP = scene.add.text(textX, startY + 30 + lineHeight, "", { font: '14px monospace', fill: '#00ff00' }).setDepth(100);
-      txtSPD = scene.add.text(textX, startY + 30 + (lineHeight * 2), "", { font: '14px monospace', fill: '#00ccff' }).setDepth(100);
-      txtDMG = scene.add.text(textX, startY + 30 + (lineHeight * 3), "", { font: '14px monospace', fill: '#ff4400' }).setDepth(100);
-      timerText = scene.add.text(20, 60, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: 'bold 20px monospace', fill: '#ffffff', stroke: '#000', strokeThickness: 3 })
+      turnText = scene.add.text(textX, startY, t('TURN_YOURS'), { font: '700 20px Trebuchet MS', fill: UI_THEME.hud.turnText, stroke: '#04101f', strokeThickness: 4 }).setDepth(100);
+      txtName = scene.add.text(textX, startY + 30, t('SELECT_SHIP'), { font: '700 18px Trebuchet MS', fill: UI_THEME.hud.labelText, stroke: '#04101f', strokeThickness: 3 }).setDepth(100);
+      txtHP = scene.add.text(textX, startY + 30 + lineHeight, "", { font: '700 14px Consolas', fill: UI_THEME.hud.hpText, stroke: '#04101f', strokeThickness: 2 }).setDepth(100);
+      txtSPD = scene.add.text(textX, startY + 30 + (lineHeight * 2), "", { font: '700 14px Consolas', fill: UI_THEME.hud.spdText, stroke: '#04101f', strokeThickness: 2 }).setDepth(100);
+      txtDMG = scene.add.text(textX, startY + 30 + (lineHeight * 3), "", { font: '700 14px Consolas', fill: UI_THEME.hud.dmgText, stroke: '#04101f', strokeThickness: 2 }).setDepth(100);
+      timerText = scene.add.text(20, 28, `${t('TIMER_LABEL')}${TURN_TIME_LIMIT}`, { font: '700 22px Consolas', fill: UI_THEME.hud.timerText, stroke: '#04101f', strokeThickness: 4 })
         .setOrigin(0, 0).setDepth(100);
 
       scene.physics.world.setBounds(0, 0, TOTAL_WIDTH, PLAY_HEIGHT);
@@ -796,6 +634,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (isTraining || isHost) {
           const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
           scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+          playSfxNow(scene, 'explosion', 0.35);
           projectile.destroy();
 
           if (!isTraining && isHost && isExecuting) {
@@ -816,7 +655,6 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         // Guest: feedback visual imediato, sem aplicar dano local.
         const boom = scene.add.circle(projectile.x, projectile.y, 15, 0xffaa00);
         scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
-        playSfxNow(scene, 'explosion', 0.35);
         showPendingHitFX(scene, ship);
         projectile.destroy();
         return;
@@ -881,7 +719,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       });
 
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-      createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, 0x008800, () => {
+      createButton(scene, TOTAL_WIDTH - 120, centerY, t('BTN_EXECUTE'), 160, 60, { variant: 'green' }, () => {
         if (!isExecuting) {
           if (sfxClick) sfxClick.play();
           submitTurn(scene);
@@ -889,7 +727,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       }, staticHudGroup);
 
       moveHandle = scene.add.circle(0, 0, 10, 0x00ff00).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
-      attackHandle = scene.add.circle(0, 0, 10, 0xff0000).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
+      attackHandle = scene.add.circle(0, 0, 10, WEAPONS.CANNON.color).setStrokeStyle(3, 0x000000).setDepth(300).setVisible(false).setInteractive({ draggable: true });
 
       moveHandle.on('drag', (pointer, dragX, dragY) => {
         if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
@@ -911,6 +749,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (selectedShip && !isExecuting && !isWaiting && !matchEnded) {
           const clamped = clampPoint(dragX, dragY);
           attackHandle.setPosition(clamped.x, clamped.y);
+          attackHandle.setFillStyle(selectedShip.weapon.color);
           selectedShip.plannedAttack = { x: clamped.x, y: clamped.y };
         }
       });
@@ -924,7 +763,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       const endTime = Date.now() + (TURN_TIME_LIMIT * 1000);
       timeLeft = TURN_TIME_LIMIT;
       timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
-      timerText.setColor('#ffffff');
+      timerText.setColor(UI_THEME.hud.timerText);
 
       timerEvent = scene.time.addEvent({
         delay: 200,
@@ -936,7 +775,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             timeLeft = secondsLeft;
             if (timeLeft < 0) timeLeft = 0;
             timerText.setText(`${t('TIMER_LABEL')}${timeLeft}`);
-            if (timeLeft <= 10) timerText.setColor('#ff0000');
+            if (timeLeft <= 10) timerText.setColor(UI_THEME.hud.timerDanger);
             if (timeLeft <= 0) submitTurn(scene);
           }
         }, loop: true
@@ -946,7 +785,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     function stopTimer() {
       if (timerEvent) timerEvent.remove();
       timerText.setText(t('WAITING_LABEL'));
-      timerText.setColor('#ffff00');
+      timerText.setColor(UI_THEME.hud.timerWaiting);
     }
 
     function spawnShip(scene, x, y, stats, faction, index, netOwner) {
@@ -1065,6 +904,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         if (ev.type === 'HITFX') {
           const boom = scene.add.circle(ev.x, ev.y, 15, 0xffaa00);
           scene.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 150, onComplete: () => boom.destroy() });
+          playSfxNow(scene, 'explosion', 0.35);
           return;
         }
 
@@ -1448,18 +1288,63 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       uiGroup.removeAll(true);
       if (!selectedShip) return;
       const centerY = PLAY_HEIGHT + (HUD_HEIGHT / 2);
-      createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, selectedShip.weapon.id === 'CANNON' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.CANNON; drawUI(scene); updateHUDInfo(); }, uiGroup);
-      createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, selectedShip.weapon.id === 'FLAK' ? 0x008800 : 0x333333, () => { selectedShip.weapon = WEAPONS.FLAK; drawUI(scene); updateHUDInfo(); }, uiGroup);
+      createButton(scene, TOTAL_WIDTH - 420, centerY, "1. CANNON", 130, 50, { variant: 'purple', dim: selectedShip.weapon.id !== 'CANNON' }, () => { selectedShip.weapon = WEAPONS.CANNON; updateHandles(); drawUI(scene); updateHUDInfo(); }, uiGroup);
+      createButton(scene, TOTAL_WIDTH - 280, centerY, "2. FLAK", 130, 50, { variant: 'orange', dim: selectedShip.weapon.id !== 'FLAK' }, () => { selectedShip.weapon = WEAPONS.FLAK; updateHandles(); drawUI(scene); updateHUDInfo(); }, uiGroup);
       let cancelX = 250;
-      if (selectedShip.plannedMove) { createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, 0xaa0000, () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); }, uiGroup); cancelX += 110; }
-      if (selectedShip.plannedAttack) { createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, 0xaa0000, () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); }, uiGroup); }
+      if (selectedShip.plannedMove) { createButton(scene, cancelX, centerY, t('BTN_MOVE'), 100, 40, { variant: 'red' }, () => { selectedShip.plannedMove = null; updateHandles(); drawUI(scene); }, uiGroup); cancelX += 110; }
+      if (selectedShip.plannedAttack) { createButton(scene, cancelX, centerY, t('BTN_ATK'), 100, 40, { variant: 'red' }, () => { selectedShip.plannedAttack = null; updateHandles(); drawUI(scene); }, uiGroup); }
     }
 
-    function createButton(scene, x, y, text, w, h, color, callback, targetGroup) {
+    function createButton(scene, x, y, text, w, h, buttonStyle, callback, targetGroup) {
+      const variantKey = (typeof buttonStyle === 'object' && buttonStyle?.variant) ? buttonStyle.variant : null;
+      const variant = variantKey ? (UI_THEME.button[variantKey] || UI_THEME.button.purple) : null;
+      const fallbackFill = (typeof buttonStyle === 'number') ? buttonStyle : UI_THEME.button.purple.fill;
+      const fill = variant?.fill ?? fallbackFill;
+      const innerFill = variant?.inner ?? 0x102745;
+      const stroke = variant?.stroke ?? 0x4ba8ff;
+      const glow = variant?.glow ?? 0x2a9dff;
+      const textColor = variant?.text ?? UI_THEME.button.baseText;
+      const isDim = Boolean(buttonStyle?.dim);
+      const dimAlpha = isDim ? 0.55 : 1;
+
       const container = scene.add.container(x, y);
-      const bg = scene.add.rectangle(0, 0, w, h, color).setInteractive({ useHandCursor: true }).on('pointerdown', callback);
-      const label = scene.add.text(0, 0, text, { fontSize: '13px', fontStyle: 'bold', fontFamily: 'Arial', align: 'center' }).setOrigin(0.5);
-      container.add([bg, label]);
+      const outerGlow = scene.add.rectangle(0, 0, w + 12, h + 12, glow, 0.22 * dimAlpha).setStrokeStyle(1, glow, 0.45 * dimAlpha);
+      const shell = scene.add.rectangle(0, 0, w, h, fill, (isDim ? 0.78 : 0.92)).setStrokeStyle(2, stroke, 1 * dimAlpha);
+      const inner = scene.add.rectangle(0, 0, w - 8, h - 8, innerFill, (isDim ? 0.75 : 0.9)).setStrokeStyle(1, stroke, 0.45 * dimAlpha);
+      const sheen = scene.add.rectangle(0, -(h * 0.22), w - 16, 8, 0xffffff, isDim ? 0.1 : 0.2);
+      const label = scene.add.text(0, 0, text, {
+        fontSize: '18px',
+        fontStyle: '700',
+        fontFamily: 'Trebuchet MS',
+        align: 'center',
+        color: textColor,
+        stroke: '#04101f',
+        strokeThickness: 3
+      }).setOrigin(0.5);
+      label.setAlpha(isDim ? 0.82 : 1);
+
+      shell.setInteractive({ useHandCursor: true })
+        .on('pointerdown', callback)
+        .on('pointerover', () => {
+          container.setScale(1.02);
+          outerGlow.setAlpha((isDim ? 0.22 : 0.34));
+          shell.setStrokeStyle(2, stroke, 1);
+        })
+        .on('pointerout', () => {
+          container.setScale(1);
+          outerGlow.setAlpha(0.22 * dimAlpha);
+          shell.setStrokeStyle(2, stroke, 1);
+        })
+        .on('pointerdown', () => {
+          container.setScale(0.98);
+          outerGlow.setAlpha(0.34);
+        })
+        .on('pointerup', () => {
+          container.setScale(1.02);
+          outerGlow.setAlpha(0.28);
+        });
+
+      container.add([outerGlow, shell, inner, sheen, label]);
       if (targetGroup) targetGroup.add(container);
       return container;
     }
@@ -1467,7 +1352,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
     function updateHandles() {
       if (!selectedShip) return;
       if (selectedShip.plannedMove) { moveHandle.setPosition(selectedShip.plannedMove.x, selectedShip.plannedMove.y); moveHandle.setVisible(true); moveHandle.setFillStyle(0x00ff00); } else { moveHandle.setVisible(false); }
-      if (selectedShip.plannedAttack) { attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y); attackHandle.setVisible(true); } else { attackHandle.setVisible(false); }
+      if (selectedShip.plannedAttack) { attackHandle.setPosition(selectedShip.plannedAttack.x, selectedShip.plannedAttack.y); attackHandle.setVisible(true); attackHandle.setFillStyle(selectedShip.weapon.color); } else { attackHandle.setVisible(false); }
     }
 
     function update() {
@@ -1502,7 +1387,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         }
 
         if (ship.plannedAttack) {
-          graphics.lineStyle(2, 0xff0000, 0.8);
+          graphics.lineStyle(2, ship.weapon.color, 0.85);
           graphics.lineBetween(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
 
           if (ship.weapon.type === 'SPREAD') {
@@ -1510,7 +1395,7 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
             const dist = Phaser.Math.Distance.Between(ship.x, ship.y, ship.plannedAttack.x, ship.plannedAttack.y);
             const p1 = { x: ship.x + Math.cos(angle - 0.2) * dist, y: ship.y + Math.sin(angle - 0.2) * dist };
             const p2 = { x: ship.x + Math.cos(angle + 0.2) * dist, y: ship.y + Math.sin(angle + 0.2) * dist };
-            graphics.lineStyle(1, 0xff0000, 0.3);
+            graphics.lineStyle(1, ship.weapon.color, 0.35);
             graphics.lineBetween(ship.x, ship.y, p1.x, p1.y);
             graphics.lineBetween(ship.x, ship.y, p2.x, p2.y);
           }
@@ -1518,9 +1403,15 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
 
         if (ship.isSelected) {
           const c = getHitboxCenter(ship);
-          graphics.lineStyle(2, 0x00ff00);
-          graphics.strokeCircle(c.x, c.y, ship.body.radius);
-          graphics.lineStyle(1, 0x00ff00, 0.15);
+          const pulse = Math.sin(Date.now() / 180) * 2;
+          const selectionRingRadius = 150;
+
+          // Selection ring: visual feedback only (not gameplay collision)
+          graphics.lineStyle(2, 0xe8f7ff, 0.95);
+          graphics.strokeCircle(c.x, c.y, selectionRingRadius + pulse);
+
+          // Move range
+          graphics.lineStyle(1, 0x00ff88, 0.22);
           graphics.strokeCircle(c.x, c.y, ship.stats.moveRange);
         }
       });
@@ -1541,29 +1432,8 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
         gameRef.current = null;
       }
     };
-  }, [roomId, isHost, isTraining, lang]);
+  }, [roomId, isHost, isTraining]);
 
   return <div id="phaser-container" />;
 };
 
-const styles = {
-  backgroundWrapper: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, #1a1a2e 0%, #000000 100%)' },
-  musicDock: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#0a141e', padding: '6px 12px', borderRadius: '20px', border: '2px solid #00ccff', boxShadow: '0 0 12px rgba(0, 204, 255, 0.25), inset 0 0 8px rgba(0,0,0,0.45)', zIndex: 9999, marginBottom: 8 },
-  gameContainer: { width: `${TOTAL_WIDTH}px`, height: `${TOTAL_HEIGHT}px`, position: 'relative', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.8)', background: '#000', border: '1px solid #333' },
-  menuBox: { width: '100%', height: '100%', backgroundImage: 'url(assets/intro.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 40 },
-  menuContent: { width: '100%', padding: '20px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center' },
-  instructionsBox: { textAlign: 'center', marginBottom: 20, textShadow: '0 2px 4px black' },
-  title: { fontSize: '3rem', color: '#00ccff', marginBottom: 10, fontFamily: 'Arial', fontWeight: '900', letterSpacing: '2px', textAlign: 'center', textShadow: '0 0 15px #00ccff' },
-  cardRow: { display: 'flex', gap: 20, marginBottom: 20 },
-  card: { width: 160, padding: 15, background: 'rgba(0, 20, 40, 0.7)', border: '1px solid #005577', borderRadius: 8, cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s', backdropFilter: 'blur(4px)', color: '#fff' },
-  cardImage: { width: '80%', height: 'auto', display: 'block', margin: '0 auto 10px', filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.3))' },
-  statLine: { fontSize: '11px', color: '#aaa', marginTop: 5, fontWeight: 'bold' },
-  slotsContainer: { display: 'flex', gap: 10, marginBottom: 20 },
-  slotActive: { width: 120, height: 35, border: '1px solid #00ff00', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 50, 0, 0.8)', borderRadius: 4, fontSize: '12px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' },
-  slotEmpty: { width: 120, height: 35, border: '1px dashed #666', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', borderRadius: 4, fontSize: '12px', color: '#666' },
-  startBtn: { padding: '12px 50px', fontSize: '1.2rem', background: 'linear-gradient(90deg, #0077ff, #00aaff)', border: 'none', borderRadius: 4, color: '#fff', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', boxShadow: '0 0 15px rgba(0,119,255,0.5)' },
-  btn: { padding: '12px 40px', fontSize: '1.2rem', background: '#0077ff', border: 'none', borderRadius: 30, cursor: 'pointer', fontWeight: 'bold', color: '#fff', boxShadow: '0 4px 10px rgba(0,119,255,0.4)' },
-  overlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  lobbyBox: { width: 300, padding: 30, background: 'rgba(0,0,0,0.6)', border: '1px solid #444', borderRadius: 10, textAlign: 'center' },
-  input: { padding: 10, fontSize: 24, textAlign: 'center', width: '100%', marginBottom: 20, background: '#111', border: '1px solid #555', color: '#fff', borderRadius: 5, letterSpacing: 5, textTransform: 'uppercase' }
-};
