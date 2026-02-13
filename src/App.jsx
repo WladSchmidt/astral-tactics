@@ -22,7 +22,7 @@ import { TEXTS } from './game/texts';
 
 // 🔥 FIREBASE
 import { db, auth } from './firebaseConfig';
-import { ref, set, get, onValue, update } from 'firebase/database';
+import { ref, set, get, onValue, update, runTransaction } from 'firebase/database';
 import { signInAnonymously } from 'firebase/auth';
 
 
@@ -40,6 +40,7 @@ export default function App() {
   const [isHost, setIsHost] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [roomMatchVersion, setRoomMatchVersion] = useState(1);
+  const [isSurrendering, setIsSurrendering] = useState(false);
 
   // --- ÁUDIO GLOBAL ---
   const [isGlobalMuted, setIsGlobalMuted] = useState(false);
@@ -349,12 +350,21 @@ export default function App() {
             <>
               <div style={{ position: 'absolute', top: 15, right: 15, zIndex: 1000 }}>
                 <button
-                  style={{ background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                  style={{ background: 'rgba(255, 0, 0, 0.2)', border: '1px solid #ff0000', color: '#ff0000', padding: '5px 10px', borderRadius: 4, cursor: isSurrendering ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '10px', opacity: isSurrendering ? 0.7 : 1 }}
+                  disabled={isSurrendering}
                   onClick={async () => {
                     if (!window.confirm(t('SURRENDER_CONFIRM'))) return;
                     if (isTraining) { handleGameOver('DEFEAT'); return; }
-                    try { await set(ref(db, `rooms/${roomId}/surrender`), isHost ? 'HOST' : 'GUEST'); }
+                    try {
+                      setIsSurrendering(true);
+                      const surrenderRole = isHost ? 'HOST' : 'GUEST';
+                      await runTransaction(ref(db, `rooms/${roomId}/surrender`), (current) => {
+                        if (current) return current;
+                        return surrenderRole;
+                      });
+                    }
                     catch (err) { alert('Erro: ' + err.message); }
+                    finally { setIsSurrendering(false); }
                   }}
                 >
                   {t('BTN_SURRENDER')}
