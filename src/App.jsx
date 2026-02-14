@@ -22,7 +22,7 @@ import { TEXTS } from './game/texts';
 
 // 🔥 FIREBASE
 import { db, auth } from './firebaseConfig';
-import { ref, set, get, onValue, update, runTransaction } from 'firebase/database';
+import { ref, set, get, onValue, update, runTransaction, push } from 'firebase/database';
 import { signInAnonymously } from 'firebase/auth';
 
 
@@ -36,6 +36,8 @@ export default function App() {
   const [runId, setRunId] = useState(0);
   const [roomId, setRoomId] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [playerName, setPlayerName] = useState('');
+  const [opponentName, setOpponentName] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [isHost, setIsHost] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
@@ -46,7 +48,13 @@ export default function App() {
   const [isGlobalMuted, setIsGlobalMuted] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatPanelPos, setChatPanelPos] = useState({ x: 0, y: 0 });
+  const [chatPanelReady, setChatPanelReady] = useState(false);
   const audioRef = useRef(null);
+  const chatDragRef = useRef({ dragging: false, offsetX: 0, offsetY: 0 });
+  const chatJoinSentRef = useRef({});
 
   const t = (key) => TEXTS[lang][key] || key;
   const surrenderHandledRef = useRef(false);
@@ -91,18 +99,34 @@ export default function App() {
     audio.play().catch(() => { });
   };
 
+  const normalizedPlayerName = () => playerName.trim().replace(/\s+/g, ' ').slice(0, 18);
+  const ensurePlayerName = () => {
+    const normalized = normalizedPlayerName();
+    if (!normalized) {
+      setStatusMsg(t('STATUS_NAME_REQUIRED'));
+      return null;
+    }
+    if (normalized !== playerName) setPlayerName(normalized);
+    return normalized;
+  };
+
   // --- GAME LOGIC ---
   const startTraining = () => {
     playClick();
+    const validName = ensurePlayerName();
+    if (!validName) return;
     setIsTraining(true);
     setIsHost(true);
     setRoomId('OFFLINE');
+    setOpponentName('IA');
     setGameState('MENU');
     setStatusMsg(t('STATUS_P2_CONNECTED'));
   };
 
   const createRoom = async () => {
     playClick();
+    const validName = ensurePlayerName();
+    if (!validName) return;
     setIsTraining(false);
     setStatusMsg(t('STATUS_CREATING'));
     try {
@@ -111,6 +135,7 @@ export default function App() {
       setIsHost(true);
       const code = Math.random().toString(36).substring(2, 6).toUpperCase();
       setRoomId(code);
+      setOpponentName('GUEST');
       const mapData = generateMapData();
       await set(ref(db, `rooms/${code}`), { host: uid, status: 'LOBBY', turn: 1, map: mapData, matchVersion: 1 });
       setRoomMatchVersion(1);
@@ -132,6 +157,8 @@ export default function App() {
 
   const joinRoom = async () => {
     playClick();
+    const validName = ensurePlayerName();
+    if (!validName) return;
     if (joinCode.length !== 4) return;
     setIsTraining(false);
     setStatusMsg(t('STATUS_JOINING'));
@@ -142,10 +169,10 @@ export default function App() {
       const rRef = ref(db, `rooms/${joinCode}`);
       const snap = await get(rRef);
       if (snap.exists()) {
-        const roomData = snap.val() || {};
         await update(rRef, { guest: uid });
-        setRoomMatchVersion(roomData.matchVersion || 1);
+        setRoomMatchVersion((snap.val() || {}).matchVersion || 1);
         setRoomId(joinCode);
+        setOpponentName('HOST');
         setGameState('MENU');
       } else {
         setStatusMsg(t('STATUS_NOT_FOUND'));
@@ -202,6 +229,25 @@ export default function App() {
 
   const backToMenu = () => { playClick(); setMySquad([]); setGameState('LOBBY'); window.location.reload(); };
 
+  const sendChatMessage = async () => {
+    if (isTraining || !roomId) return;
+    const text = chatInput.trim().slice(0, 200);
+    if (!text) return;
+    try {
+      const msgRef = push(ref(db, `rooms/${roomId}/chat`));
+      await set(msgRef, {
+        uid: auth.currentUser?.uid || '',
+        role: isHost ? 'HOST' : 'GUEST',
+        name: normalizedPlayerName() || (isHost ? 'HOST' : 'GUEST'),
+        text,
+        ts: Date.now()
+      });
+      setChatInput('');
+    } catch (e) {
+      setStatusMsg(t('STATUS_ERROR') + e.message);
+    }
+  };
+
   const getResultColor = () => {
     if (gameResult === 'VICTORY') return '#00ff00';
     if (gameResult === 'DRAW') return '#ffff00';
@@ -222,6 +268,104 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [roomId, isTraining, isHost, runId]);
+
+  useEffect(() => {
+    if (!roomId || isTraining || gameState !== 'PLAYING') return;
+
+    const chatRef = ref(db, `rooms/${roomId}/chat`);
+
+    const unsubChat = onValue(chatRef, (snapshot) => {
+      const raw = snapshot.val();
+      if (!raw) {
+        setChatMessages([]);
+        return;
+      }
+      const ordered = Object.entries(raw)
+        .map(([id, msg]) => ({ id, ...msg }))
+        .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+        .slice(-60);
+      setChatMessages(ordered);
+    });
+
+    return () => {
+      unsubChat();
+    };
+  }, [roomId, isTraining, gameState, isHost]);
+
+  useEffect(() => {
+    if (!roomId || isTraining || gameState !== 'PLAYING') return;
+    const uid = auth.currentUser?.uid;
+    const name = normalizedPlayerName();
+    if (!uid || !name) return;
+
+    const key = `${roomId}:${uid}:${runId}`;
+    if (chatJoinSentRef.current[key]) return;
+    chatJoinSentRef.current[key] = true;
+
+    const msgRef = push(ref(db, `rooms/${roomId}/chat`));
+    set(msgRef, {
+      uid,
+      role: isHost ? 'HOST' : 'GUEST',
+      name,
+      kind: 'SYS_JOIN',
+      text: '',
+      ts: Date.now()
+    }).catch(() => { });
+  }, [roomId, isTraining, gameState, runId, isHost]);
+
+  const selfPilotName = normalizedPlayerName();
+  const findNameByRole = (role) => {
+    if (!role) return '';
+    for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
+      const m = chatMessages[i];
+      if (m?.role === role && typeof m?.name === 'string' && m.name.trim()) {
+        return m.name.trim().slice(0, 18);
+      }
+    }
+    return '';
+  };
+  const hostPilotLabel = findNameByRole('HOST') || (isHost ? (selfPilotName || 'Piloto Host') : 'Piloto Host');
+  const guestPilotLabel = findNameByRole('GUEST') || (!isHost ? (selfPilotName || 'Piloto Guest') : 'Piloto Guest');
+
+  useEffect(() => {
+    if (isTraining || gameState !== 'PLAYING') {
+      setChatPanelReady(false);
+      return;
+    }
+
+    const panelWidth = 280;
+    const panelHeight = 340;
+    const preferredX = Math.round((window.innerWidth / 2) + (TOTAL_WIDTH / 2) + 16);
+    const preferredY = Math.round((window.innerHeight / 2) - (TOTAL_HEIGHT / 2) + 70);
+    const maxX = Math.max(10, window.innerWidth - panelWidth - 10);
+    const maxY = Math.max(10, window.innerHeight - panelHeight - 10);
+    const x = Math.min(Math.max(10, preferredX), maxX);
+    const y = Math.min(Math.max(10, preferredY), maxY);
+    setChatPanelPos({ x, y });
+    setChatPanelReady(true);
+  }, [gameState, isTraining, roomId, runId]);
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!chatDragRef.current.dragging) return;
+      const panelWidth = 280;
+      const panelHeight = 340;
+      const maxX = Math.max(10, window.innerWidth - panelWidth - 10);
+      const maxY = Math.max(10, window.innerHeight - panelHeight - 10);
+      const nx = Math.min(Math.max(10, e.clientX - chatDragRef.current.offsetX), maxX);
+      const ny = Math.min(Math.max(10, e.clientY - chatDragRef.current.offsetY), maxY);
+      setChatPanelPos({ x: nx, y: ny });
+    };
+    const onMouseUp = () => {
+      chatDragRef.current.dragging = false;
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (!roomId || isTraining || gameState !== 'GAMEOVER') return;
@@ -327,6 +471,8 @@ export default function App() {
             <LobbyScreen
               t={t}
               styles={styles}
+              playerName={playerName}
+              setPlayerName={setPlayerName}
               joinCode={joinCode}
               setJoinCode={setJoinCode}
               statusMsg={statusMsg}
@@ -401,6 +547,90 @@ export default function App() {
             />
           )}
         </div>
+
+        {!isTraining && gameState === 'PLAYING' && chatPanelReady && (
+          <div
+            style={{
+              position: 'fixed',
+              left: chatPanelPos.x,
+              top: chatPanelPos.y,
+              width: 280,
+              height: 340,
+              zIndex: 1600,
+              border: '1px solid rgba(0, 204, 255, 0.45)',
+              borderRadius: 10,
+              background: 'linear-gradient(180deg, rgba(5, 22, 38, 0.92), rgba(2, 12, 22, 0.9))',
+              boxShadow: '0 0 18px rgba(0, 204, 255, 0.18)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+          >
+            <div
+              onMouseDown={(e) => {
+                chatDragRef.current.dragging = true;
+                chatDragRef.current.offsetX = e.clientX - chatPanelPos.x;
+                chatDragRef.current.offsetY = e.clientY - chatPanelPos.y;
+              }}
+              style={{
+                padding: '8px 10px',
+                borderBottom: '1px solid rgba(0, 204, 255, 0.2)',
+                color: '#7fe9ff',
+                fontWeight: 'bold',
+                fontSize: 12,
+                cursor: 'move',
+                background: 'rgba(0, 22, 40, 0.55)'
+              }}
+            >
+              {t('CHAT_TITLE')} ({hostPilotLabel} vs {guestPilotLabel})
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+              {chatMessages.filter((msg) => msg?.kind !== 'SYS_JOIN').map((msg) => (
+                <div key={msg.id} style={{ marginBottom: 6, fontSize: 12, lineHeight: 1.35 }}>
+                  <span style={{ color: '#7fe9ff', fontWeight: 'bold' }}>{msg.name || 'Player'}: </span>
+                  <span style={{ color: '#d6ecff' }}>{msg.text || ''}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '1px solid rgba(0, 204, 255, 0.2)' }}>
+              <input
+                type="text"
+                value={chatInput}
+                maxLength={200}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendChatMessage(); }}
+                placeholder={t('CHAT_PLACEHOLDER')}
+                style={{
+                  flex: 1,
+                  height: 30,
+                  borderRadius: 6,
+                  border: '1px solid rgba(0, 204, 255, 0.35)',
+                  background: 'rgba(0, 0, 0, 0.45)',
+                  color: '#d6ecff',
+                  padding: '0 8px',
+                  outline: 'none',
+                  fontSize: 12
+                }}
+              />
+              <button
+                onClick={sendChatMessage}
+                style={{
+                  height: 30,
+                  borderRadius: 6,
+                  border: '1px solid #00ccff',
+                  background: 'rgba(0, 149, 255, 0.25)',
+                  color: '#9de7ff',
+                  fontWeight: 'bold',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  padding: '0 10px'
+                }}
+              >
+                {t('CHAT_SEND')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -998,92 +1228,100 @@ const PhaserGame = ({ roomId, isHost, isTraining, mySquadList, onGameOver, onExi
       } catch {
         // Ignore audio context resume failures.
       }
+      try {
+        isExecuting = true;
+        isWaiting = true;
+        turnText.setText(t('EXECUTING_LABEL'));
+        stopTimer();
 
-      isExecuting = true;
-      isWaiting = true;
-      turnText.setText(t('EXECUTING_LABEL'));
-      stopTimer();
+        clearPredictions();
+        authoritativeTurnEvents = [];
+        authoritativeEventSeq = 0;
+        lastProcessedEventSeq = 0;
+        if (selectedShip) deselectAll();
+        uiGroup.setVisible(false);
 
-      clearPredictions();
-      authoritativeTurnEvents = [];
-      authoritativeEventSeq = 0;
-      lastProcessedEventSeq = 0;
-      if (selectedShip) deselectAll();
-      uiGroup.setVisible(false);
+        [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
 
-      [...playerSquad, ...enemySquad].forEach(s => s.hasCrashed = false);
+        const myData = isHost ? turnData.host : turnData.guest;
+        const enemyData = isHost ? turnData.guest : turnData.host;
 
-      const myData = isHost ? turnData.host : turnData.guest;
-      const enemyData = isHost ? turnData.guest : turnData.host;
+        playerSquad.forEach(s => {
+          const plan = myData.find(p => p.index === s.squadIndex);
+          if (plan) {
+            if (plan.move) s.plannedMove = plan.move;
+            if (plan.attack) {
+              const wid = plan.attack.weapon || 'CANNON';
+              s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
+              s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
+            }
+          }
+        });
 
-      playerSquad.forEach(s => {
-        const plan = myData.find(p => p.index === s.squadIndex);
-        if (plan) {
-          if (plan.move) s.plannedMove = plan.move;
-          if (plan.attack) {
-            const wid = plan.attack.weapon || 'CANNON';
-            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
-            s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
+        enemySquad.forEach(s => {
+          const plan = enemyData.find(p => p.index === s.squadIndex);
+          if (plan) {
+            if (plan.move) s.plannedMove = plan.move;
+            if (plan.attack) {
+              const wid = plan.attack.weapon || 'CANNON';
+              s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
+              s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
+            }
+          }
+        });
+
+        [...playerSquad, ...enemySquad].forEach(s => {
+          const target = s.plannedMove || s.plannedAttack;
+          if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y));
+        });
+
+        [...playerSquad, ...enemySquad].forEach(s => {
+          if (!s.active) return;
+          if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y);
+          if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
+        });
+
+        let hostResult = null;
+        await new Promise(r => setTimeout(r, 2500));
+
+        if (!isTraining) {
+          const currentT = turnRefValue.current;
+          if (isHost) {
+            await set(ref(db, `rooms/${roomId}/turnLive/${currentT}`), null);
+            lastProcessedEventSeq = authoritativeEventSeq;
+            hostResult = { hpState: buildCurrentHpState(), events: authoritativeTurnEvents, at: Date.now() };
+            await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
+            applyHpState(hostResult.hpState);
+          } else {
+            const data = await waitTurnResult(roomId, currentT);
+            applyAuthoritativeEvents(scene, data?.events);
+            applyHpState(data?.hpState);
           }
         }
-      });
 
-      enemySquad.forEach(s => {
-        const plan = enemyData.find(p => p.index === s.squadIndex);
-        if (plan) {
-          if (plan.move) s.plannedMove = plan.move;
-          if (plan.attack) {
-            const wid = plan.attack.weapon || 'CANNON';
-            s.weapon = WEAPONS[wid] || WEAPONS.CANNON;
-            s.plannedAttack = { x: plan.attack.x, y: plan.attack.y };
-          }
-        }
-      });
+        [...playerSquad, ...enemySquad].forEach(s => {
+          s.plannedMove = null;
+          s.plannedAttack = null;
+          if (s.active) s.body.setVelocity(0, 0);
+        });
 
-      [...playerSquad, ...enemySquad].forEach(s => {
-        const target = s.plannedMove || s.plannedAttack;
-        if (target && s.active) s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y));
-      });
+        isExecuting = false;
+        isWaiting = false;
+        turnRefValue.current = turnRefValue.current + 1;
 
-      [...playerSquad, ...enemySquad].forEach(s => {
-        if (!s.active) return;
-        if (s.plannedAttack) fireWeapon(scene, s, s.plannedAttack.x, s.plannedAttack.y);
-        if (s.plannedMove) moveShip(scene, s, s.plannedMove.x, s.plannedMove.y);
-      });
+        turnText.setText(t('TURN_YOURS'));
+        uiGroup.setVisible(true);
 
-      let hostResult = null;
-      await new Promise(r => setTimeout(r, 2500));
-
-      if (!isTraining) {
-        const currentT = turnRefValue.current;
-        if (isHost) {
-          await set(ref(db, `rooms/${roomId}/turnLive/${currentT}`), null);
-          lastProcessedEventSeq = authoritativeEventSeq;
-          hostResult = { hpState: buildCurrentHpState(), events: authoritativeTurnEvents, at: Date.now() };
-          await set(ref(db, `rooms/${roomId}/turnResults/${currentT}`), hostResult);
-          applyHpState(hostResult.hpState);
-        } else {
-          const data = await waitTurnResult(roomId, currentT);
-          applyAuthoritativeEvents(scene, data?.events);
-          applyHpState(data?.hpState);
-        }
+        checkWinCondition();
+        startTimer(scene);
+      } catch (err) {
+        isExecuting = false;
+        isWaiting = false;
+        uiGroup.setVisible(true);
+        turnText.setText(`${t('STATUS_ERROR')} sync`);
+        startTimer(scene);
+        console.error('Turn resolution sync error:', err);
       }
-
-      [...playerSquad, ...enemySquad].forEach(s => {
-        s.plannedMove = null;
-        s.plannedAttack = null;
-        if (s.active) s.body.setVelocity(0, 0);
-      });
-
-      isExecuting = false;
-      isWaiting = false;
-      turnRefValue.current = turnRefValue.current + 1;
-
-      turnText.setText(t('TURN_YOURS'));
-      uiGroup.setVisible(true);
-
-      checkWinCondition();
-      startTimer(scene);
     }
 
     function checkWinCondition() {

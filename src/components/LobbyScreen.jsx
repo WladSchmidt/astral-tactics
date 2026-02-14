@@ -3,6 +3,8 @@ import React from 'react';
 export default function LobbyScreen({
   t,
   styles,
+  playerName,
+  setPlayerName,
   joinCode,
   setJoinCode,
   statusMsg,
@@ -15,6 +17,17 @@ export default function LobbyScreen({
       <div style={styles.menuContent}>
         <h1 style={styles.title}>{t('MAIN_TITLE')}</h1>
         <p style={{ color: '#00ccff', marginBottom: 30, fontSize: '1.2rem', textShadow: '0 0 10px #00ccff' }}>{t('MAIN_SUBTITLE')}</p>
+        <div style={{ width: '100%', maxWidth: 420, marginBottom: 18 }}>
+          <h3 style={{ color: '#fff', margin: '0 0 8px 0', textAlign: 'center' }}>{t('PLAYER_NAME_LABEL')}</h3>
+          <input
+            type="text"
+            maxLength={18}
+            style={{ ...styles.input, letterSpacing: 1, textTransform: 'none', fontSize: 20, marginBottom: 0 }}
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder={t('PLAYER_NAME_PLACEHOLDER')}
+          />
+        </div>
         <button style={{ ...styles.btn, background: '#444', width: '100%', marginBottom: 30, border: '1px solid #666' }} onClick={onStartTraining}>{t('BTN_TRAINING')}</button>
         <div style={{ display: 'flex', gap: 40 }}>
           <div style={styles.lobbyBox}>
